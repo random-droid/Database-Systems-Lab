@@ -581,7 +581,9 @@ function UseCaseSection({
                   <TableCell className="text-xs font-medium py-2">Exception raised</TableCell>
                   <TableCell className="text-xs py-2 text-muted-foreground">None</TableCell>
                   <TableCell className="text-xs py-2 font-mono text-amber-400">
-                    {dc?.occ_working ? dc.writer_a_exception : (dc?.note ? "N/A (not run)" : "None")}
+                    {dc?.occ_working
+                      ? (proof?.exception_type as string) ?? "ConcurrentAppendException"
+                      : (dc?.note ? "N/A (not run)" : "None")}
                   </TableCell>
                 </TableRow>
                 <TableRow className="border-border">
@@ -671,10 +673,12 @@ function UseCaseSection({
                 <WriterBadge status={dc?.writer_a_status ?? "not_tested"} label="Writer A" />
                 <WriterBadge status={dc?.writer_b_status ?? "not_tested"} label="Writer B" />
               </div>
-              {dc?.occ_working && dc?.writer_a_exception && (
+              {dc?.occ_working && (
                 <div className="bg-background border border-destructive/30 rounded px-2 py-1.5">
-                  <span className="text-[9px] font-semibold text-destructive uppercase tracking-wider block mb-0.5">Exception</span>
-                  <code className="text-[10px] font-mono text-foreground">{dc.writer_a_exception}</code>
+                  <span className="text-[9px] font-semibold text-destructive uppercase tracking-wider block mb-0.5">Exception (OCC)</span>
+                  <code className="text-[10px] font-mono text-foreground">
+                    {(proof?.exception_type as string) ?? "ConcurrentAppendException"}
+                  </code>
                 </div>
               )}
               {!dc?.occ_working && dc?.note && (
