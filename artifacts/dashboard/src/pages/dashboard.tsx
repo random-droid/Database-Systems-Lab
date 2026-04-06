@@ -475,32 +475,40 @@ function UseCaseSection({
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
+  const [activeLogStream, setActiveLogStream] = useState<UseCaseType | null>(null);
+
   const { data: status } = useGetBenchmarkStatus({
     query: {
       queryKey: getGetBenchmarkStatusQueryKey(),
-      refetchInterval: (query) => query.state.data?.running ? 3000 : false
+      // Poll every 3s while a run is active or an SSE stream is open
+      refetchInterval: (query) =>
+        (query.state.data?.running || activeLogStream !== null) ? 3000 : false,
     }
   });
   
   const runBenchmark = useRunBenchmark();
-  const [activeLogStream, setActiveLogStream] = useState<UseCaseType | null>(null);
 
   const handleRun = (useCase: UseCaseType) => {
     runBenchmark.mutate({ useCase }, {
       onSuccess: () => {
         setActiveLogStream(useCase);
+        // Immediately refresh status so running=true and system chips update
+        queryClient.invalidateQueries({ queryKey: getGetBenchmarkStatusQueryKey() });
       }
     });
   };
 
   const handleLogComplete = () => {
     if (activeLogStream) {
+      // Refresh status first so completedUseCases updates and enables the results query
+      queryClient.invalidateQueries({ queryKey: getGetBenchmarkStatusQueryKey() });
+      // Then refetch results for this specific use case
       queryClient.invalidateQueries({ queryKey: getGetBenchmarkResultsQueryKey(activeLogStream) });
       setActiveLogStream(null);
     }
   };
 
-  // Sync log stream state with server status if refreshed
+  // Sync log stream state with server status if refreshed (e.g., page reload mid-run)
   useEffect(() => {
     if (status?.running && status.runningUseCase && !activeLogStream) {
       setActiveLogStream(status.runningUseCase as UseCaseType);
