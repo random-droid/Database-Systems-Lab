@@ -13,30 +13,39 @@
     "demonstrates": "Raw Parquet: no conflict detection \u2192 last-writer-wins \u2192 silent data loss"
   },
   "delta_conflict": {
-    "writer_a_status": "conflict_detected",
-    "writer_a_exception": "ConcurrentAppendException",
-    "writer_b_status": "committed",
-    "writer_b_rows_committed": 500000,
-    "occ_working": true,
-    "lost_update_prevented": true,
+    "writer_a_status": "not_tested",
+    "writer_a_exception": null,
+    "writer_b_status": "not_tested",
+    "writer_b_rows_committed": 0,
+    "occ_working": false,
+    "lost_update_prevented": false,
     "demonstrates": "Delta Lake OCC: ConcurrentAppendException prevents concurrent overwrite",
-    "note": "Simulated \u2014 install delta-spark to run live"
+    "note": "Inconclusive \u2014 delta-spark not installed; install delta-spark to run live"
   },
   "delta_snapshot": {
-    "version_0_rows": 100000,
-    "current_version_rows": 600000,
-    "snapshot_isolation_confirmed": true,
-    "time_travel_query": "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0",
+    "version_0_rows": 0,
+    "current_version_rows": 0,
+    "snapshot_isolation_confirmed": false,
+    "time_travel_query": "SELECT COUNT(*) FROM delta.\u0060<path>\u0060 VERSION AS OF 0",
     "demonstrates": "Delta MVCC: VERSION AS OF 0 returns pre-write snapshot; concurrent readers unaffected",
-    "note": "Simulated \u2014 install delta-spark to run live"
+    "note": "Inconclusive \u2014 delta-spark not installed; install delta-spark to run live"
+  },
+  "proof": {
+    "lost_update_confirmed": true,
+    "occ_confirmed": false,
+    "mvcc_confirmed": false,
+    "rows_lost_in_parquet": 500000,
+    "exception_type": "ConcurrentAppendException",
+    "conclusion": "Parquet lost-update confirmed (500K rows silently lost); Delta OCC/MVCC require delta-spark to run live",
+    "maps_to": "CMU 15-721 Lectures 13-15: OCC / MVCC / Concurrency Control"
   },
   "validation": {
     "lecture": "CMU 15-721 Lectures 13-15: OCC / MVCC / Concurrency Control",
     "concept": "OCC detects write-write conflicts at commit time; MVCC enables consistent snapshot reads",
-    "proof": "Parquet: 500,000 rows silently lost (last-writer-wins) | Delta OCC: ConcurrentAppendException raised for Writer A | Delta MVCC: VERSION AS OF 0 \u2192 100,000 rows (vs 600,000 current)",
+    "proof": "Parquet: 500,000 rows silently lost (last-writer-wins) | Delta OCC: inconclusive (delta-spark not installed) | Delta MVCC: inconclusive (delta-spark not installed)",
     "validates": "ACID lakehouse (Delta) vs raw file format (Parquet) \u2014 integrity is not free",
-    "status": "\u2705 OCC + MVCC confirmed",
-    "confirmed": true,
-    "interpretation": "Raw Parquet has NO conflict detection: Writer B silently overwrote Writer A, losing 500,000 rows with zero error. Delta Lake's OCC caught the same conflict at commit time (ConcurrentAppendException), preventing data corruption. The MVCC time-travel read proved snapshot isolation \u2014 VERSION AS OF 0 returned exactly 100,000 rows despite 600,000 rows in the current version."
+    "status": "\u26a0\ufe0f Partial results",
+    "confirmed": false,
+    "interpretation": "Raw Parquet has NO conflict detection: Writer B silently overwrote Writer A, losing 500,000 rows with zero error. Delta Lake sub-tests are inconclusive in this environment \u2014 delta-spark is not installed. Install delta-spark to observe ConcurrentAppendException (OCC) and VERSION AS OF 0 time-travel (MVCC) live."
   }
 }

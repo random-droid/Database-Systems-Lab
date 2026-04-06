@@ -504,16 +504,20 @@ function UseCaseSection({
     const p = data.parquet_lost_update;
     const dc = data.delta_conflict;
     const ds = data.delta_snapshot;
+    const proof = (data as unknown as Record<string, unknown>).proof as Record<string, unknown> | undefined;
 
     const WriterBadge = ({ status, label }: { status: string; label: string }) => {
       const isCommit = status === "committed";
       const isConflict = status === "conflict_detected";
+      const isNotTested = status === "not_tested" || status === "error";
       const color = isCommit
         ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
         : isConflict
         ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+        : isNotTested
+        ? "bg-muted/30 text-muted-foreground border-muted-foreground/20 opacity-50"
         : "bg-red-500/10 text-red-400 border-red-500/30";
-      const icon = isCommit ? "✅" : isConflict ? "🎯" : "❌";
+      const icon = isCommit ? "✅" : isConflict ? "🎯" : isNotTested ? "—" : "❌";
       return (
         <div className="flex flex-col gap-1">
           <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
@@ -524,87 +528,185 @@ function UseCaseSection({
       );
     };
 
+    // Conflict timeline events
+    const timelineEvents = [
+      { t: "T+0s", label: "Writer A starts", color: "text-blue-400", line: "bg-blue-500/30" },
+      { t: "T+0.15s", label: "Writer B starts (overlapping)", color: "text-amber-400", line: "bg-amber-500/30" },
+      { t: "T+0.25s", label: "Writer B commits", color: "text-emerald-400", line: "bg-emerald-500/30" },
+      { t: "T+0.5s", label: dc?.occ_working ? "Writer A → ConcurrentAppendException" : "Writer A commits (lost update)", color: dc?.occ_working ? "text-red-400" : "text-red-300", line: dc?.occ_working ? "bg-red-500/40" : "bg-red-500/20" },
+    ];
+
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border">
-        <div className="p-6 border-b lg:border-b-0 lg:border-r border-border flex flex-col gap-5">
-          <div className="flex items-center gap-2">
+      <div className="flex flex-col border-b border-border">
+        {/* Parquet vs Delta Comparison Table */}
+        <div className="px-6 pt-5 pb-4 border-b border-border/50">
+          <div className="flex items-center gap-2 mb-3">
             <ShieldAlert className="w-4 h-4 text-muted-foreground" />
             <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
-              Race Condition <span className="text-primary">Outcome</span>
+              Parquet vs Delta <span className="text-primary">Comparison</span>
             </h3>
           </div>
-
-          {/* Sub-test A: Parquet */}
-          <div className="border border-border rounded-md p-4 bg-red-500/5 border-red-500/20">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-red-400">Sub-test A: Raw Parquet</span>
-              <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/30 text-xs font-mono">
-                ❌ Lost Update
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <WriterBadge status={p?.writer_a_status ?? "committed"} label="Writer A" />
-              <WriterBadge status={p?.writer_b_status ?? "committed"} label="Writer B" />
-            </div>
-            <div className="flex flex-wrap gap-3 pt-2 border-t border-border/50">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Expected Rows</span>
-                <span className="text-xs font-mono text-foreground">{(p?.expected_total_rows ?? 1000000).toLocaleString()}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Actual Rows</span>
-                <span className="text-xs font-mono text-foreground">{(p?.actual_total_rows ?? 500000).toLocaleString()}</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Rows Silently Lost</span>
-                <span className="text-xs font-mono text-red-400 font-bold">{(p?.rows_silently_lost ?? 500000).toLocaleString()}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Sub-test B: Delta OCC */}
-          <div className="border border-border rounded-md p-4 bg-emerald-500/5 border-emerald-500/20">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Sub-test B: Delta Lake OCC</span>
-              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-xs font-mono">
-                ✅ Conflict Detected
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <WriterBadge status={dc?.writer_a_status ?? "conflict_detected"} label="Writer A" />
-              <WriterBadge status={dc?.writer_b_status ?? "committed"} label="Writer B" />
-            </div>
-            <div className="bg-background border border-destructive/30 rounded px-3 py-2">
-              <span className="text-[9px] font-semibold text-destructive uppercase tracking-wider block mb-1">Exception</span>
-              <code className="text-xs font-mono text-foreground">{dc?.writer_a_exception ?? "ConcurrentAppendException"}</code>
-            </div>
-          </div>
-
-          {/* Sub-test C: Delta MVCC */}
-          <div className="border border-border rounded-md p-4 bg-blue-500/5 border-blue-500/20">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Sub-test C: Delta MVCC Snapshot</span>
-              <Badge variant="outline" className={`text-xs font-mono ${ds?.snapshot_isolation_confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"}`}>
-                {ds?.snapshot_isolation_confirmed ? "✅ Isolated" : "⚠️ Inconclusive"}
-              </Badge>
-            </div>
-            <div className="flex flex-wrap gap-3 mb-3">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">VERSION AS OF 0</span>
-                <span className="text-xs font-mono text-blue-400">{(ds?.version_0_rows ?? 100000).toLocaleString()} rows</span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Current Version</span>
-                <span className="text-xs font-mono text-foreground">{(ds?.current_version_rows ?? 600000).toLocaleString()} rows</span>
-              </div>
-            </div>
-            <code className="text-[10px] font-mono text-muted-foreground bg-muted/30 px-2 py-1 rounded block truncate">
-              {ds?.time_travel_query ?? "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0"}
-            </code>
+          <div className="overflow-auto rounded-md border border-border">
+            <Table>
+              <TableHeader className="bg-muted/30">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="font-mono uppercase tracking-wider text-[10px] py-2">Property</TableHead>
+                  <TableHead className="font-mono uppercase tracking-wider text-[10px] py-2 text-red-400">Raw Parquet</TableHead>
+                  <TableHead className="font-mono uppercase tracking-wider text-[10px] py-2 text-blue-400">Delta Lake</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow className="border-border">
+                  <TableCell className="text-xs font-medium py-2">Conflict detection</TableCell>
+                  <TableCell className="text-xs py-2 text-red-400">❌ None</TableCell>
+                  <TableCell className="text-xs py-2 text-emerald-400">✅ OCC (optimistic)</TableCell>
+                </TableRow>
+                <TableRow className="border-border">
+                  <TableCell className="text-xs font-medium py-2">Writer A outcome</TableCell>
+                  <TableCell className="text-xs py-2 font-mono">{p?.writer_a_status ?? "committed"}</TableCell>
+                  <TableCell className="text-xs py-2 font-mono">
+                    {dc?.occ_working ? "conflict_detected" : dc?.writer_a_status ?? "not_tested"}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="border-border">
+                  <TableCell className="text-xs font-medium py-2">Rows lost</TableCell>
+                  <TableCell className="text-xs py-2 text-red-400 font-bold font-mono">
+                    {(p?.rows_silently_lost ?? 0).toLocaleString()} rows
+                  </TableCell>
+                  <TableCell className="text-xs py-2 text-emerald-400 font-mono">
+                    {dc?.occ_working ? "0 rows (rejected)" : "—"}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="border-border">
+                  <TableCell className="text-xs font-medium py-2">Exception raised</TableCell>
+                  <TableCell className="text-xs py-2 text-muted-foreground">None</TableCell>
+                  <TableCell className="text-xs py-2 font-mono text-amber-400">
+                    {dc?.occ_working ? dc.writer_a_exception : (dc?.note ? "N/A (not run)" : "None")}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="border-border">
+                  <TableCell className="text-xs font-medium py-2">Snapshot isolation</TableCell>
+                  <TableCell className="text-xs py-2 text-red-400">❌ No versioning</TableCell>
+                  <TableCell className="text-xs py-2">
+                    {ds?.snapshot_isolation_confirmed
+                      ? <span className="text-emerald-400">✅ VERSION AS OF 0 → {ds.version_0_rows.toLocaleString()} rows</span>
+                      : <span className="text-muted-foreground">{ds?.note ?? "⚠️ Not verified"}</span>
+                    }
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         </div>
-        <div className="p-6 bg-muted/5">
-          <ValidationPanel validation={data.validation} />
+
+        {/* Conflict Timeline */}
+        <div className="px-6 pt-4 pb-4 border-b border-border/50">
+          <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Conflict Timeline</h4>
+          <div className="flex items-start gap-0">
+            {timelineEvents.map((ev, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center">
+                <div className={`text-[9px] font-mono ${ev.color} mb-1 text-center`}>{ev.t}</div>
+                <div className={`w-full h-2 ${ev.line} rounded-sm mb-1.5`} />
+                <div className={`text-[9px] text-center leading-tight ${ev.color} max-w-[80px]`}>{ev.label}</div>
+              </div>
+            ))}
+          </div>
+          {proof && (
+            <div className="mt-3 flex flex-wrap gap-3 pt-3 border-t border-border/40">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Lost Update</span>
+                <Badge variant="outline" className={`font-mono text-[10px] w-fit ${proof.lost_update_confirmed ? "bg-red-500/10 text-red-400 border-red-500/30" : "bg-muted/20 text-muted-foreground"}`}>
+                  {proof.lost_update_confirmed ? `❌ ${(proof.rows_lost_in_parquet as number)?.toLocaleString() ?? 0} rows lost` : "Not confirmed"}
+                </Badge>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">OCC</span>
+                <Badge variant="outline" className={`font-mono text-[10px] w-fit ${proof.occ_confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"}`}>
+                  {proof.occ_confirmed ? "✅ Confirmed" : "⚠️ Needs delta-spark"}
+                </Badge>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">MVCC</span>
+                <Badge variant="outline" className={`font-mono text-[10px] w-fit ${proof.mvcc_confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"}`}>
+                  {proof.mvcc_confirmed ? "✅ Confirmed" : "⚠️ Needs delta-spark"}
+                </Badge>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sub-tests Detail + Validation */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+          <div className="p-6 border-b lg:border-b-0 lg:border-r border-border flex flex-col gap-4">
+            <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Sub-test Results</h4>
+
+            {/* Sub-test A: Parquet */}
+            <div className="border border-border rounded-md p-3 bg-red-500/5 border-red-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-red-400">A · Raw Parquet</span>
+                <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/30 text-[10px] font-mono">
+                  {p?.lost_update_confirmed ? "❌ Lost Update" : "ℹ️ Concurrent"}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <WriterBadge status={p?.writer_a_status ?? "committed"} label="Writer A" />
+                <WriterBadge status={p?.writer_b_status ?? "committed"} label="Writer B" />
+              </div>
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-border/40 text-xs font-mono">
+                <span className="text-muted-foreground">Expected: <span className="text-foreground">{(p?.expected_total_rows ?? 1_000_000).toLocaleString()}</span></span>
+                <span className="text-muted-foreground">Actual: <span className="text-foreground">{(p?.actual_total_rows ?? 500_000).toLocaleString()}</span></span>
+                <span className="text-red-400 font-bold">Lost: {(p?.rows_silently_lost ?? 500_000).toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Sub-test B: Delta OCC */}
+            <div className={`border rounded-md p-3 ${dc?.occ_working ? "bg-emerald-500/5 border-emerald-500/20" : "bg-muted/5 border-muted-foreground/20"}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-xs font-bold uppercase tracking-wider ${dc?.occ_working ? "text-emerald-400" : "text-muted-foreground"}`}>B · Delta OCC</span>
+                <Badge variant="outline" className={`text-[10px] font-mono ${dc?.occ_working ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"}`}>
+                  {dc?.occ_working ? "✅ Conflict Detected" : "⚠️ Inconclusive"}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <WriterBadge status={dc?.writer_a_status ?? "not_tested"} label="Writer A" />
+                <WriterBadge status={dc?.writer_b_status ?? "not_tested"} label="Writer B" />
+              </div>
+              {dc?.occ_working && dc?.writer_a_exception && (
+                <div className="bg-background border border-destructive/30 rounded px-2 py-1.5">
+                  <span className="text-[9px] font-semibold text-destructive uppercase tracking-wider block mb-0.5">Exception</span>
+                  <code className="text-[10px] font-mono text-foreground">{dc.writer_a_exception}</code>
+                </div>
+              )}
+              {!dc?.occ_working && dc?.note && (
+                <p className="text-[10px] text-muted-foreground italic">{dc.note}</p>
+              )}
+            </div>
+
+            {/* Sub-test C: Delta MVCC */}
+            <div className={`border rounded-md p-3 ${ds?.snapshot_isolation_confirmed ? "bg-blue-500/5 border-blue-500/20" : "bg-muted/5 border-muted-foreground/20"}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-xs font-bold uppercase tracking-wider ${ds?.snapshot_isolation_confirmed ? "text-blue-400" : "text-muted-foreground"}`}>C · Delta MVCC</span>
+                <Badge variant="outline" className={`text-[10px] font-mono ${ds?.snapshot_isolation_confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"}`}>
+                  {ds?.snapshot_isolation_confirmed ? "✅ Isolated" : "⚠️ Inconclusive"}
+                </Badge>
+              </div>
+              {ds?.snapshot_isolation_confirmed ? (
+                <div className="flex flex-wrap gap-2 text-xs font-mono">
+                  <span className="text-blue-400">v0: {ds.version_0_rows.toLocaleString()} rows</span>
+                  <span className="text-muted-foreground">current: {ds.current_version_rows.toLocaleString()} rows</span>
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted-foreground italic">{ds?.note ?? "Run with delta-spark to verify"}</p>
+              )}
+              <code className="text-[9px] font-mono text-muted-foreground/70 bg-muted/30 px-1.5 py-1 rounded block mt-2 truncate">
+                {ds?.time_travel_query ?? "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0"}
+              </code>
+            </div>
+          </div>
+
+          <div className="p-6 bg-muted/5">
+            <ValidationPanel validation={data.validation} />
+          </div>
         </div>
       </div>
     );

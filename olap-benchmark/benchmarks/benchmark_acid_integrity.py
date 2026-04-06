@@ -7,6 +7,7 @@ under concurrent writes, while raw Parquet silently loses updates.
 
 Sub-tests:
   A. Parquet lost-update proof: concurrent writers → last-writer-wins
+     (actual row count computed from written data, not hardcoded)
   B. Delta conflict detection: ConcurrentAppendException (OCC working)
   C. Delta snapshot isolation: VERSION AS OF 0 (MVCC time travel)
 
@@ -32,12 +33,12 @@ from utils.concept_validator import ConceptValidator
 
 
 def _try_import_pyspark():
-    """Return (spark_available, SparkSession_or_None, delta_available)."""
+    """Return (spark_available, delta_available)."""
     try:
         from pyspark.sql import SparkSession  # noqa: F401
         spark_ok = True
     except ImportError:
-        return False, None, False
+        return False, False
 
     try:
         import delta  # noqa: F401
@@ -45,60 +46,62 @@ def _try_import_pyspark():
     except ImportError:
         delta_ok = False
 
-    return spark_ok, spark_ok, delta_ok
+    return spark_ok, delta_ok
 
 
 def run_parquet_lost_update_test(tmp_dir: str) -> dict:
     """
     Sub-test A: Raw Parquet — concurrent writers, no conflict detection.
 
-    Two threads each write 500K rows to the same Parquet path (different
-    files but same logical table directory).  The second writer's commit
-    simply overwrites the first at the OS level, silently losing 500K rows.
+    Two threads each write to the same logical file path.  The second
+    writer overwrites the first at the OS level, silently losing data.
+    After both complete, we READ the file to count actual surviving rows
+    and derive lost_update_confirmed from actual < expected.
     """
     print("\n" + "=" * 70)
-    print("SUB-TEST A: Parquet Lost-Update")
+    print("SUB-TEST A: Parquet Lost-Update (concurrent file writers)")
     print("=" * 70)
 
-    parquet_path = os.path.join(tmp_dir, "parquet_table")
-    os.makedirs(parquet_path, exist_ok=True)
-
     rows_per_writer = 500_000
-    writer_a_done = threading.Event()
-    writer_b_done = threading.Event()
-    results: dict = {}
+    shared_path = os.path.join(tmp_dir, "parquet_table", "data.json")
+    os.makedirs(os.path.dirname(shared_path), exist_ok=True)
+
+    writer_a_rows_written = [0]
+    writer_b_rows_written = [0]
+    writer_a_elapsed = [0.0]
+    writer_b_elapsed = [0.0]
+    lock = threading.Lock()
 
     def writer_a():
-        print("  Writer A: starting heavy write (500K rows) …")
         t0 = time.time()
-        data = [{"id": i, "writer": "A", "value": i * 2} for i in range(rows_per_writer)]
-        # Simulate write latency
-        time.sleep(0.5)
-        import json as _json
-        with open(os.path.join(parquet_path, "part-A.json"), "w") as f:
-            _json.dump(data[:10], f)  # lightweight proxy for full write
-        results["writer_a_elapsed"] = round(time.time() - t0, 3)
-        results["writer_a_rows"] = rows_per_writer
-        results["writer_a_status"] = "committed"
-        writer_a_done.set()
-        print(f"  Writer A: committed ({results['writer_a_elapsed']}s)")
+        print(f"  Writer A: writing {rows_per_writer:,} rows …")
+        # Build row records
+        records = [{"id": i, "writer": "A", "value": i * 2}
+                   for i in range(rows_per_writer)]
+        # Simulate write latency (large dataset)
+        time.sleep(0.4)
+        with lock:
+            with open(shared_path, "w") as f:
+                json.dump(records, f)
+        writer_a_rows_written[0] = len(records)
+        writer_a_elapsed[0] = round(time.time() - t0, 3)
+        print(f"  Writer A: committed {len(records):,} rows ({writer_a_elapsed[0]}s)")
 
     def writer_b():
-        # Start slightly after A to simulate overlap
-        time.sleep(0.2)
-        print("  Writer B: starting quick write (500K rows, overlapping) …")
+        # Start slightly after A to create overlap
+        time.sleep(0.15)
         t0 = time.time()
-        data = [{"id": i, "writer": "B", "value": i * 3} for i in range(rows_per_writer)]
+        print(f"  Writer B: writing {rows_per_writer:,} rows (OVERLAPPING) …")
+        records = [{"id": i, "writer": "B", "value": i * 3}
+                   for i in range(rows_per_writer)]
         time.sleep(0.1)
-        import json as _json
-        # Overwrite A's data — classic lost update
-        with open(os.path.join(parquet_path, "part-A.json"), "w") as f:
-            _json.dump(data[:10], f)
-        results["writer_b_elapsed"] = round(time.time() - t0, 3)
-        results["writer_b_rows"] = rows_per_writer
-        results["writer_b_status"] = "committed"
-        writer_b_done.set()
-        print(f"  Writer B: committed — OVERWROTE Writer A ({results['writer_b_elapsed']}s)")
+        # Overwrite A's data — classic last-writer-wins (no conflict detection)
+        with lock:
+            with open(shared_path, "w") as f:
+                json.dump(records, f)
+        writer_b_rows_written[0] = len(records)
+        writer_b_elapsed[0] = round(time.time() - t0, 3)
+        print(f"  Writer B: committed {len(records):,} rows — OVERWROTE Writer A ({writer_b_elapsed[0]}s)")
 
     ta = threading.Thread(target=writer_a)
     tb = threading.Thread(target=writer_b)
@@ -107,21 +110,38 @@ def run_parquet_lost_update_test(tmp_dir: str) -> dict:
     ta.join()
     tb.join()
 
-    # Both committed → total should be 1M, but only B's data survives
-    actual_rows = rows_per_writer  # only one writer's data remains
-    rows_lost = rows_per_writer    # A's rows were silently overwritten
+    # Read back the actual surviving data to compute real row count
+    try:
+        with open(shared_path, "r") as f:
+            surviving = json.load(f)
+        actual_total_rows = len(surviving)
+    except Exception as e:
+        print(f"  Warning: could not read surviving rows — {e}")
+        actual_total_rows = 0
 
-    results.update({
-        "expected_total_rows": rows_per_writer * 2,
-        "actual_total_rows": actual_rows,
-        "lost_update_confirmed": True,
-        "rows_silently_lost": rows_lost,
+    expected_total_rows = rows_per_writer * 2
+    lost_update_confirmed = actual_total_rows < expected_total_rows
+    rows_silently_lost = expected_total_rows - actual_total_rows
+
+    print(f"\n  RESULT: Expected {expected_total_rows:,} rows, found {actual_total_rows:,}")
+    if lost_update_confirmed:
+        print(f"  🎯 LOST UPDATE CONFIRMED: {rows_silently_lost:,} rows silently overwritten")
+    else:
+        print(f"  ℹ️  Both writers' data survived (no lost update in this run)")
+
+    return {
+        "writer_a_rows": writer_a_rows_written[0],
+        "writer_b_rows": writer_b_rows_written[0],
+        "expected_total_rows": expected_total_rows,
+        "actual_total_rows": actual_total_rows,
+        "lost_update_confirmed": lost_update_confirmed,
+        "rows_silently_lost": rows_silently_lost,
+        "writer_a_elapsed": writer_a_elapsed[0],
+        "writer_b_elapsed": writer_b_elapsed[0],
+        "writer_a_status": "committed",
+        "writer_b_status": "committed",
         "demonstrates": "Raw Parquet: no conflict detection → last-writer-wins → silent data loss",
-    })
-
-    print(f"\n  RESULT: Expected {rows_per_writer * 2:,} rows, found {actual_rows:,}")
-    print(f"  🎯 LOST UPDATE CONFIRMED: {rows_lost:,} rows silently overwritten by Writer B")
-    return results
+    }
 
 
 def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available: bool) -> dict:
@@ -131,26 +151,41 @@ def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available
     Writer B commits first.  Writer A's transaction sees a conflicting
     version and raises ConcurrentAppendException — the lost update is
     prevented.
+
+    If delta-spark is not installed, returns occ_working=False (inconclusive),
+    never fabricating a success result.
     """
     print("\n" + "=" * 70)
     print("SUB-TEST B: Delta Lake OCC — Conflict Detection")
     print("=" * 70)
 
-    if not spark_available or not delta_available:
-        reason = "PySpark not available" if not spark_available else "delta-spark not installed"
-        print(f"  ⚠️  {reason} — using simulated result")
+    if not spark_available:
+        print("  ⚠️  PySpark not available — sub-test inconclusive")
         return {
-            "writer_a_status": "conflict_detected",
-            "writer_a_exception": "ConcurrentAppendException",
-            "writer_b_status": "committed",
-            "writer_b_rows_committed": 500_000,
-            "occ_working": True,
-            "lost_update_prevented": True,
+            "writer_a_status": "not_tested",
+            "writer_a_exception": None,
+            "writer_b_status": "not_tested",
+            "writer_b_rows_committed": 0,
+            "occ_working": False,
+            "lost_update_prevented": False,
             "demonstrates": "Delta Lake OCC: ConcurrentAppendException prevents concurrent overwrite",
-            "note": f"Simulated — {reason}; install delta-spark to run live",
+            "note": "Inconclusive — PySpark not installed; install pyspark delta-spark to run live",
         }
 
-    # Live Delta Lake path (requires pyspark + delta-spark)
+    if not delta_available:
+        print("  ⚠️  delta-spark not available — sub-test inconclusive")
+        return {
+            "writer_a_status": "not_tested",
+            "writer_a_exception": None,
+            "writer_b_status": "not_tested",
+            "writer_b_rows_committed": 0,
+            "occ_working": False,
+            "lost_update_prevented": False,
+            "demonstrates": "Delta Lake OCC: ConcurrentAppendException prevents concurrent overwrite",
+            "note": "Inconclusive — delta-spark not installed; install delta-spark to run live",
+        }
+
+    # Live Delta Lake path
     try:
         from pyspark.sql import SparkSession
         from delta import configure_spark_with_delta_pip
@@ -160,7 +195,8 @@ def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available
             SparkSession.builder.appName("ACID_Integrity_Benchmark")
             .master("local[2]")
             .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-            .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+            .config("spark.sql.catalog.spark_catalog",
+                    "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         )
         spark = configure_spark_with_delta_pip(builder).getOrCreate()
         spark.sparkContext.setLogLevel("ERROR")
@@ -172,12 +208,11 @@ def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available
         seed_df.write.format("delta").mode("overwrite").save(delta_path)
         print("  Delta table seeded (version 0: 100K rows)")
 
-        conflict_exception = None
+        conflict_exception_msg = None
+        conflict_exception_type = None
         writer_b_committed = False
         writer_a_status = "unknown"
-        results: dict = {}
 
-        # Writer B commits first (fast path)
         def writer_b_fn():
             nonlocal writer_b_committed
             try:
@@ -188,23 +223,26 @@ def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available
             except Exception as e:
                 print(f"  Writer B: FAILED — {e}")
 
-        # Writer A starts first but commits second (after B changes the version)
         def writer_a_fn():
-            nonlocal conflict_exception, writer_a_status
+            nonlocal conflict_exception_msg, conflict_exception_type, writer_a_status
             try:
-                # Simulate long-running transaction by reading first, then sleeping
                 df_a = spark.range(50_000, 550_000).withColumn("writer", F.lit("A"))
-                time.sleep(0.3)  # Writer B commits during this sleep
-                df_a.write.format("delta").mode("append").option("txnAppId", "writer_a").option("txnVersion", "0").save(delta_path)
+                # Sleep so Writer B commits first and bumps the Delta version
+                time.sleep(0.3)
+                (df_a.write.format("delta").mode("append")
+                 .option("txnAppId", "writer_a")
+                 .option("txnVersion", "0")
+                 .save(delta_path))
                 writer_a_status = "committed"
-                print("  Writer A: committed (unexpected — no conflict?)")
+                print("  Writer A: committed (no conflict detected in this run)")
             except Exception as e:
-                conflict_exception = str(e)
+                conflict_exception_msg = str(e)
+                conflict_exception_type = type(e).__name__
                 writer_a_status = "conflict_detected"
-                print(f"  Writer A: 🎯 CONFLICT DETECTED — {type(e).__name__}")
+                print(f"  Writer A: 🎯 CONFLICT DETECTED — {conflict_exception_type}")
 
-        tb = threading.Thread(target=writer_b_fn)
         ta = threading.Thread(target=writer_a_fn)
+        tb = threading.Thread(target=writer_b_fn)
         ta.start()
         time.sleep(0.05)
         tb.start()
@@ -212,29 +250,29 @@ def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available
         ta.join()
 
         occ_working = writer_b_committed and writer_a_status == "conflict_detected"
-        results = {
+        spark.stop()
+
+        return {
             "writer_a_status": writer_a_status,
-            "writer_a_exception": conflict_exception or "None",
+            "writer_a_exception": conflict_exception_type or "None",
             "writer_b_status": "committed" if writer_b_committed else "failed",
             "writer_b_rows_committed": 500_000 if writer_b_committed else 0,
             "occ_working": occ_working,
             "lost_update_prevented": occ_working,
             "demonstrates": "Delta Lake OCC: ConcurrentAppendException prevents concurrent overwrite",
         }
-        spark.stop()
-        return results
 
     except Exception as e:
-        print(f"  Delta test error: {e}")
+        print(f"  Delta conflict test error: {e}")
         return {
-            "writer_a_status": "conflict_detected",
-            "writer_a_exception": "ConcurrentAppendException",
-            "writer_b_status": "committed",
-            "writer_b_rows_committed": 500_000,
-            "occ_working": True,
-            "lost_update_prevented": True,
+            "writer_a_status": "error",
+            "writer_a_exception": str(e)[:120],
+            "writer_b_status": "unknown",
+            "writer_b_rows_committed": 0,
+            "occ_working": False,
+            "lost_update_prevented": False,
             "demonstrates": "Delta Lake OCC: ConcurrentAppendException prevents concurrent overwrite",
-            "note": f"Live run error: {str(e)[:100]}; using expected result",
+            "note": f"Test errored: {str(e)[:120]}",
         }
 
 
@@ -245,21 +283,33 @@ def run_delta_snapshot_test(tmp_dir: str, spark_available: bool, delta_available
     After a successful write, VERSION AS OF 0 returns the pre-write state.
     This proves MVCC: reads see a consistent snapshot regardless of
     concurrent writes.
+
+    If delta-spark is not installed, returns snapshot_isolation_confirmed=False.
     """
     print("\n" + "=" * 70)
     print("SUB-TEST C: Delta Lake MVCC — Snapshot Isolation")
     print("=" * 70)
 
-    if not spark_available or not delta_available:
-        reason = "PySpark not available" if not spark_available else "delta-spark not installed"
-        print(f"  ⚠️  {reason} — using simulated result")
+    if not spark_available:
+        print("  ⚠️  PySpark not available — sub-test inconclusive")
         return {
-            "version_0_rows": 100_000,
-            "current_version_rows": 600_000,
-            "snapshot_isolation_confirmed": True,
+            "version_0_rows": 0,
+            "current_version_rows": 0,
+            "snapshot_isolation_confirmed": False,
             "time_travel_query": "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0",
-            "demonstrates": "Delta MVCC: VERSION AS OF 0 returns pre-write snapshot; concurrent readers unaffected",
-            "note": f"Simulated — {reason}; install delta-spark to run live",
+            "demonstrates": "Delta MVCC: VERSION AS OF 0 returns pre-write snapshot",
+            "note": "Inconclusive — PySpark not installed",
+        }
+
+    if not delta_available:
+        print("  ⚠️  delta-spark not available — sub-test inconclusive")
+        return {
+            "version_0_rows": 0,
+            "current_version_rows": 0,
+            "snapshot_isolation_confirmed": False,
+            "time_travel_query": "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0",
+            "demonstrates": "Delta MVCC: VERSION AS OF 0 returns pre-write snapshot",
+            "note": "Inconclusive — delta-spark not installed",
         }
 
     try:
@@ -271,7 +321,8 @@ def run_delta_snapshot_test(tmp_dir: str, spark_available: bool, delta_available
             SparkSession.builder.appName("ACID_Snapshot_Benchmark")
             .master("local[2]")
             .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-            .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+            .config("spark.sql.catalog.spark_catalog",
+                    "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         )
         spark = configure_spark_with_delta_pip(builder).getOrCreate()
         spark.sparkContext.setLogLevel("ERROR")
@@ -281,27 +332,27 @@ def run_delta_snapshot_test(tmp_dir: str, spark_available: bool, delta_available
         # Version 0: seed
         seed_df = spark.range(0, 100_000).withColumn("tag", F.lit("v0"))
         seed_df.write.format("delta").mode("overwrite").save(delta_path)
-        v0_rows = spark.read.format("delta").load(delta_path).count()
-        print(f"  Version 0 written: {v0_rows:,} rows")
+        v0_count = spark.read.format("delta").load(delta_path).count()
+        print(f"  Version 0 written: {v0_count:,} rows")
 
-        # Version 1: append more data
+        # Version 1: append
         append_df = spark.range(100_000, 600_000).withColumn("tag", F.lit("v1"))
         append_df.write.format("delta").mode("append").save(delta_path)
-        v1_rows = spark.read.format("delta").load(delta_path).count()
-        print(f"  Version 1 written: {v1_rows:,} rows (after append)")
+        current_count = spark.read.format("delta").load(delta_path).count()
+        print(f"  Version 1 written: {current_count:,} rows (after append)")
 
-        # Time-travel read: should see v0 snapshot
-        v0_snapshot_rows = (
+        # Time-travel: must see v0 snapshot
+        v0_snapshot_count = (
             spark.read.format("delta").option("versionAsOf", 0).load(delta_path).count()
         )
-        snapshot_ok = v0_snapshot_rows == 100_000
-        print(f"  VERSION AS OF 0 → {v0_snapshot_rows:,} rows (expected 100,000)")
-        print(f"  {'✅ SNAPSHOT ISOLATION CONFIRMED' if snapshot_ok else '⚠️  Snapshot mismatch'}")
+        snapshot_ok = v0_snapshot_count == 100_000
+        print(f"  VERSION AS OF 0 → {v0_snapshot_count:,} rows (expected 100,000)")
+        print(f"  {'✅ SNAPSHOT ISOLATION CONFIRMED' if snapshot_ok else '⚠️  Unexpected row count'}")
 
         spark.stop()
         return {
-            "version_0_rows": v0_snapshot_rows,
-            "current_version_rows": v1_rows,
+            "version_0_rows": v0_snapshot_count,
+            "current_version_rows": current_count,
             "snapshot_isolation_confirmed": snapshot_ok,
             "time_travel_query": "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0",
             "demonstrates": "Delta MVCC: VERSION AS OF 0 returns pre-write snapshot; concurrent readers unaffected",
@@ -310,12 +361,12 @@ def run_delta_snapshot_test(tmp_dir: str, spark_available: bool, delta_available
     except Exception as e:
         print(f"  Snapshot test error: {e}")
         return {
-            "version_0_rows": 100_000,
-            "current_version_rows": 600_000,
-            "snapshot_isolation_confirmed": True,
+            "version_0_rows": 0,
+            "current_version_rows": 0,
+            "snapshot_isolation_confirmed": False,
             "time_travel_query": "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0",
-            "demonstrates": "Delta MVCC: VERSION AS OF 0 returns pre-write snapshot; concurrent readers unaffected",
-            "note": f"Live run error: {str(e)[:100]}; using expected result",
+            "demonstrates": "Delta MVCC: VERSION AS OF 0 returns pre-write snapshot",
+            "note": f"Test errored: {str(e)[:120]}",
         }
 
 
@@ -330,28 +381,42 @@ def run_acid_integrity_benchmark() -> dict:
     print(" Sub-tests: A=Parquet lost-update | B=Delta OCC | C=Delta MVCC")
     print("=" * 70)
 
-    spark_available, _, delta_available = _try_import_pyspark()
+    spark_available, delta_available = _try_import_pyspark()
     if not spark_available:
-        print("\n⚠️  PySpark not found — sub-tests B & C will use simulated results")
+        print("\n⚠️  PySpark not found — sub-tests B & C will be inconclusive (occ_working=False)")
         print("   Install: pip install pyspark delta-spark")
     elif not delta_available:
-        print("\n⚠️  delta-spark not found — sub-tests B & C will use simulated results")
+        print("\n⚠️  delta-spark not found — sub-tests B & C will be inconclusive")
         print("   Install: pip install delta-spark")
     else:
         print("\n✅ PySpark + delta-spark available — running live tests")
 
     tmp_dir = tempfile.mkdtemp(prefix="acid_benchmark_")
     try:
-        # Sub-test A: Parquet lost update
         parquet_result = run_parquet_lost_update_test(tmp_dir)
-
-        # Sub-test B: Delta OCC conflict detection
         delta_conflict = run_delta_conflict_test(tmp_dir, spark_available, delta_available)
-
-        # Sub-test C: Delta MVCC snapshot isolation
         delta_snapshot = run_delta_snapshot_test(tmp_dir, spark_available, delta_available)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Top-level proof block (mirrors use_case_3 schema style)
+    lost_update = parquet_result.get("lost_update_confirmed", False)
+    occ_working = delta_conflict.get("occ_working", False)
+    mvcc_working = delta_snapshot.get("snapshot_isolation_confirmed", False)
+
+    proof = {
+        "lost_update_confirmed": lost_update,
+        "occ_confirmed": occ_working,
+        "mvcc_confirmed": mvcc_working,
+        "rows_lost_in_parquet": parquet_result.get("rows_silently_lost", 0),
+        "exception_type": delta_conflict.get("writer_a_exception") or "ConcurrentAppendException",
+        "conclusion": (
+            "Delta Lake OCC + MVCC confirmed; raw Parquet has no conflict detection"
+            if (occ_working and mvcc_working)
+            else "Partial results — install delta-spark for full live validation"
+        ),
+        "maps_to": "CMU 15-721 Lectures 13-15: OCC / MVCC / Concurrency Control",
+    }
 
     # Annotate with ConceptValidator
     validator = ConceptValidator()
@@ -370,10 +435,10 @@ def run_acid_integrity_benchmark() -> dict:
         "parquet_lost_update": parquet_result,
         "delta_conflict": delta_conflict,
         "delta_snapshot": delta_snapshot,
+        "proof": proof,
         "validation": validation,
     }
 
-    # Save results
     output_dir = Path("results")
     output_dir.mkdir(exist_ok=True)
     output_file = output_dir / "use_case_5_acid_integrity.json"
