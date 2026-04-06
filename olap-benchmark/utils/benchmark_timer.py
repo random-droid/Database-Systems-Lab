@@ -13,6 +13,7 @@ Maps to CMU 15-721:
 """
 
 import time
+import threading
 import psutil
 import os
 
@@ -21,7 +22,21 @@ class BenchmarkTimer:
     
     def __init__(self):
         self.process = psutil.Process(os.getpid())
-    
+
+    def _monitor_peak_memory(self, stop_event, peak_holder, interval=0.05):
+        """
+        Background thread that polls RSS every *interval* seconds and records
+        the maximum observed value into peak_holder[0].
+        """
+        while not stop_event.is_set():
+            try:
+                rss_mb = self.process.memory_info().rss / (1024 ** 2)
+                if rss_mb > peak_holder[0]:
+                    peak_holder[0] = rss_mb
+            except Exception:
+                pass
+            stop_event.wait(interval)
+
     def benchmark_with_io_breakdown(self, query_func, system_name=""):
         """
         Measure execution with CPU vs IO breakdown.
@@ -33,6 +48,8 @@ class BenchmarkTimer:
                 'io_wait_seconds': float,
                 'cpu_bound_percent': float,
                 'io_bound_percent': float,
+                'peak_memory_mb': float,   # true peak RSS during query
+                'memory_increase_mb': float,
                 'interpretation': str
             }
         """
@@ -41,15 +58,36 @@ class BenchmarkTimer:
         start_wall = time.time()
         start_cpu = self.process.cpu_times()
         start_memory = self.process.memory_info().rss / (1024**2)  # MB
-        
-        # Run query
-        result = query_func()
+
+        # Start background memory monitor
+        stop_event = threading.Event()
+        peak_holder = [start_memory]
+        monitor_thread = threading.Thread(
+            target=self._monitor_peak_memory,
+            args=(stop_event, peak_holder),
+            daemon=True,
+        )
+        monitor_thread.start()
+
+        try:
+            # Run query
+            result = query_func()
+        finally:
+            # Stop monitor
+            stop_event.set()
+            monitor_thread.join(timeout=1)
         
         # End metrics
         end_wall = time.time()
         end_cpu = self.process.cpu_times()
         end_memory = self.process.memory_info().rss / (1024**2)  # MB
-        
+
+        # Final poll to capture any last-moment spike
+        if end_memory > peak_holder[0]:
+            peak_holder[0] = end_memory
+
+        peak_memory = peak_holder[0]
+
         # Calculate breakdown
         total_time = end_wall - start_wall
         cpu_time = (end_cpu.user - start_cpu.user) + (end_cpu.system - start_cpu.system)
@@ -67,8 +105,8 @@ class BenchmarkTimer:
             'io_wait_seconds': round(io_wait, 3),
             'cpu_bound_percent': round(cpu_percent, 1),
             'io_bound_percent': round(io_percent, 1),
-            'peak_memory_mb': round(end_memory, 1),
-            'memory_increase_mb': round(end_memory - start_memory, 1),
+            'peak_memory_mb': round(peak_memory, 1),
+            'memory_increase_mb': round(peak_memory - start_memory, 1),
             'interpretation': interpretation,
             'demonstrates': self._get_demonstration(cpu_percent),
             'system': system_name
@@ -200,6 +238,87 @@ def time_query(func, system_name="", include_cold_hot=False):
         metrics['cold_hot'] = cold_hot
     
     return metrics
+
+class PeakMemoryCapture:
+    """
+    Lightweight context manager / callable wrapper that records peak RSS memory
+    for benchmark scripts that don't use BenchmarkTimer's full timing machinery.
+
+    Usage (context manager):
+        capture = PeakMemoryCapture()
+        with capture:
+            run_heavy_benchmark()
+        result["peak_memory_mb"] = capture.peak_memory_mb
+
+    Usage (inline injection into an existing result dict):
+        inject_peak_memory(result_dict)   # adds peak_memory_mb to the dict in-place
+    """
+
+    _POLL_INTERVAL = 0.05  # seconds
+
+    def __init__(self):
+        self._process = psutil.Process(os.getpid())
+        self.peak_memory_mb: float = 0.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._started = False
+        self._stopped = False
+
+    def _poll(self):
+        while not self._stop.is_set():
+            try:
+                rss = self._process.memory_info().rss / (1024 ** 2)
+                if rss > self.peak_memory_mb:
+                    self.peak_memory_mb = rss
+            except Exception:
+                pass
+            self._stop.wait(self._POLL_INTERVAL)
+
+    def __enter__(self):
+        if not self._started:
+            self.peak_memory_mb = self._process.memory_info().rss / (1024 ** 2)
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._poll, daemon=True)
+            self._thread.start()
+            self._started = True
+        return self
+
+    def __exit__(self, *_):
+        if self._stopped:
+            return
+        self._stopped = True
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+        # Final sample
+        try:
+            rss = self._process.memory_info().rss / (1024 ** 2)
+            if rss > self.peak_memory_mb:
+                self.peak_memory_mb = rss
+        except Exception:
+            pass
+        return False  # don't suppress exceptions
+
+
+def inject_peak_memory(result: dict, capture: "PeakMemoryCapture | None" = None) -> dict:
+    """
+    Add 'peak_memory_mb' to *result* in-place.
+
+    If *capture* is provided, its recorded peak is used.
+    Otherwise a fresh one-shot snapshot of current RSS is used as a best-effort fallback.
+
+    Returns *result* for convenient chaining.
+    """
+    if capture is not None:
+        result["peak_memory_mb"] = round(capture.peak_memory_mb, 1)
+    else:
+        try:
+            rss = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
+        except Exception:
+            rss = 0.0
+        result.setdefault("peak_memory_mb", round(rss, 1))
+    return result
+
 
 if __name__ == '__main__':
     # Test the timer

@@ -33,6 +33,7 @@ from datetime import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.concept_validator import ConceptValidator
+from utils.benchmark_timer import inject_peak_memory, PeakMemoryCapture
 
 N_ROWS = 10_000_000   # 10M rows
 
@@ -151,111 +152,118 @@ def run_compression_benchmark() -> dict:
     print(" Formats: CSV (uncompressed) vs Parquet (Snappy) vs Parquet (Zstd)")
     print("=" * 70)
 
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
     try:
-        import duckdb
-    except ImportError:
-        print("  ❌ duckdb not installed — run: pip install duckdb")
-        return {"error": "duckdb not installed"}
+        try:
+            import duckdb
+        except ImportError:
+            print("  ❌ duckdb not installed — run: pip install duckdb")
+            return {"error": "duckdb not installed"}
 
-    tmp_dir = tempfile.mkdtemp(prefix="compression_benchmark_")
-    conn = duckdb.connect(":memory:")
+        tmp_dir = tempfile.mkdtemp(prefix="compression_benchmark_")
+        conn = duckdb.connect(":memory:")
 
-    try:
-        _generate_data(conn, N_ROWS)
+        try:
+            _generate_data(conn, N_ROWS)
+
+            print("\n" + "=" * 70)
+            print("FORMAT 1: CSV (no compression)")
+            print("=" * 70)
+            csv_result = measure_format(
+                conn, "csv_plain", "csv", "FORMAT CSV, HEADER true", N_ROWS, tmp_dir
+            )
+
+            print("\n" + "=" * 70)
+            print("FORMAT 2: Parquet (Snappy codec — default)")
+            print("=" * 70)
+            parquet_snappy = measure_format(
+                conn, "parquet_snappy", "parquet", "FORMAT PARQUET, CODEC SNAPPY", N_ROWS, tmp_dir
+            )
+
+            print("\n" + "=" * 70)
+            print("FORMAT 3: Parquet (Zstd codec — high compression)")
+            print("=" * 70)
+            parquet_zstd = measure_format(
+                conn, "parquet_zstd", "parquet", "FORMAT PARQUET, CODEC ZSTD", N_ROWS, tmp_dir
+            )
+
+        finally:
+            conn.close()
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        # Compute comparisons
+        csv_size = csv_result["size_bytes"]
+        snappy_size = parquet_snappy["size_bytes"]
+        zstd_size = parquet_zstd["size_bytes"]
+
+        snappy_ratio = round(csv_size / snappy_size, 2) if snappy_size > 0 else 0
+        zstd_ratio = round(csv_size / zstd_size, 2) if zstd_size > 0 else 0
+
+        csv_scan = csv_result["scan_time_ms"]
+        snappy_scan = parquet_snappy["scan_time_ms"]
+        zstd_scan = parquet_zstd["scan_time_ms"]
+
+        scan_speedup_snappy = round(csv_scan / snappy_scan, 2) if snappy_scan > 0 else 0
+        scan_speedup_zstd = round(csv_scan / zstd_scan, 2) if zstd_scan > 0 else 0
+
+        comparison = {
+            "csv_vs_parquet_snappy": {
+                "size_ratio": snappy_ratio,
+                "scan_speedup": scan_speedup_snappy,
+            },
+            "csv_vs_parquet_zstd": {
+                "size_ratio": zstd_ratio,
+                "scan_speedup": scan_speedup_zstd,
+            },
+        }
 
         print("\n" + "=" * 70)
-        print("FORMAT 1: CSV (no compression)")
+        print("COMPRESSION SUMMARY")
         print("=" * 70)
-        csv_result = measure_format(
-            conn, "csv_plain", "csv", "FORMAT CSV, HEADER true", N_ROWS, tmp_dir
-        )
+        print(f"  CSV:              {csv_result['size_mb']:.1f} MB  (baseline)")
+        print(f"  Parquet (Snappy): {parquet_snappy['size_mb']:.1f} MB  ({snappy_ratio}x smaller)")
+        print(f"  Parquet (Zstd):   {parquet_zstd['size_mb']:.1f} MB  ({zstd_ratio}x smaller)")
+        print(f"  Scan speedup (Snappy): {scan_speedup_snappy}x faster than CSV")
+        print(f"  Scan speedup (Zstd):   {scan_speedup_zstd}x faster than CSV")
 
-        print("\n" + "=" * 70)
-        print("FORMAT 2: Parquet (Snappy codec — default)")
-        print("=" * 70)
-        parquet_snappy = measure_format(
-            conn, "parquet_snappy", "parquet", "FORMAT PARQUET, CODEC SNAPPY", N_ROWS, tmp_dir
+        # Concept validation
+        validator = ConceptValidator()
+        validation = validator.validate_compression(
+            csv_result=csv_result,
+            parquet_snappy=parquet_snappy,
+            parquet_zstd=parquet_zstd,
+            comparison=comparison,
         )
+        ConceptValidator.print_validation(validation)
 
-        print("\n" + "=" * 70)
-        print("FORMAT 3: Parquet (Zstd codec — high compression)")
-        print("=" * 70)
-        parquet_zstd = measure_format(
-            conn, "parquet_zstd", "parquet", "FORMAT PARQUET, CODEC ZSTD", N_ROWS, tmp_dir
-        )
+        result = {
+            "use_case": 7,
+            "benchmark": "compression_effectiveness",
+            "row_count": N_ROWS,
+            "formats": {
+                "csv": csv_result,
+                "parquet_snappy": parquet_snappy,
+                "parquet_zstd": parquet_zstd,
+            },
+            "comparison": comparison,
+            "validation": validation,
+            "run_timestamp": datetime.now().isoformat(),
+            "maps_to": "CMU 15-721 Lecture 03: Storage Models (columnar compression)",
+        }
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(result, _peak_capture)
 
+        output_dir = Path("results")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / "use_case_7_compression.json"
+        with open(output_file, "w") as f:
+            json.dump(result, f, indent=2, default=str)
+
+        print(f"\n\U0001f4be Results saved: {output_file.resolve()}")
+        return result
     finally:
-        conn.close()
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    # Compute comparisons
-    csv_size = csv_result["size_bytes"]
-    snappy_size = parquet_snappy["size_bytes"]
-    zstd_size = parquet_zstd["size_bytes"]
-
-    snappy_ratio = round(csv_size / snappy_size, 2) if snappy_size > 0 else 0
-    zstd_ratio = round(csv_size / zstd_size, 2) if zstd_size > 0 else 0
-
-    csv_scan = csv_result["scan_time_ms"]
-    snappy_scan = parquet_snappy["scan_time_ms"]
-    zstd_scan = parquet_zstd["scan_time_ms"]
-
-    scan_speedup_snappy = round(csv_scan / snappy_scan, 2) if snappy_scan > 0 else 0
-    scan_speedup_zstd = round(csv_scan / zstd_scan, 2) if zstd_scan > 0 else 0
-
-    comparison = {
-        "csv_vs_parquet_snappy": {
-            "size_ratio": snappy_ratio,
-            "scan_speedup": scan_speedup_snappy,
-        },
-        "csv_vs_parquet_zstd": {
-            "size_ratio": zstd_ratio,
-            "scan_speedup": scan_speedup_zstd,
-        },
-    }
-
-    print("\n" + "=" * 70)
-    print("COMPRESSION SUMMARY")
-    print("=" * 70)
-    print(f"  CSV:              {csv_result['size_mb']:.1f} MB  (baseline)")
-    print(f"  Parquet (Snappy): {parquet_snappy['size_mb']:.1f} MB  ({snappy_ratio}x smaller)")
-    print(f"  Parquet (Zstd):   {parquet_zstd['size_mb']:.1f} MB  ({zstd_ratio}x smaller)")
-    print(f"  Scan speedup (Snappy): {scan_speedup_snappy}x faster than CSV")
-    print(f"  Scan speedup (Zstd):   {scan_speedup_zstd}x faster than CSV")
-
-    # Concept validation
-    validator = ConceptValidator()
-    validation = validator.validate_compression(
-        csv_result=csv_result,
-        parquet_snappy=parquet_snappy,
-        parquet_zstd=parquet_zstd,
-        comparison=comparison,
-    )
-    ConceptValidator.print_validation(validation)
-
-    result = {
-        "use_case": 7,
-        "benchmark": "compression_effectiveness",
-        "row_count": N_ROWS,
-        "formats": {
-            "csv": csv_result,
-            "parquet_snappy": parquet_snappy,
-            "parquet_zstd": parquet_zstd,
-        },
-        "comparison": comparison,
-        "validation": validation,
-        "run_timestamp": datetime.now().isoformat(),
-        "maps_to": "CMU 15-721 Lecture 03: Storage Models (columnar compression)",
-    }
-
-    output_dir = Path("results")
-    output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / "use_case_7_compression.json"
-    with open(output_file, "w") as f:
-        json.dump(result, f, indent=2, default=str)
-
-    print(f"\n\U0001f4be Results saved: {output_file.resolve()}")
-    return result
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 
 if __name__ == "__main__":

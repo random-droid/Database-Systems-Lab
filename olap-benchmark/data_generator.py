@@ -19,10 +19,43 @@ from faker import Faker
 from datetime import datetime, timedelta
 import json
 import os
+import psutil
 
 fake = Faker()
 Faker.seed(42)  # Reproducible data
 np.random.seed(42)
+
+
+def auto_select_dataset_size():
+    """
+    Auto-detect available memory and select an appropriate dataset size.
+
+    Thresholds:
+        >= 1.5 GB available  →  50M rows  (full benchmark)
+        >= 0.5 GB available  →  10M rows  (medium dataset)
+        <  0.5 GB available  →   1M rows  (small / safe mode)
+
+    Returns:
+        int: Recommended number of rows for the orders table.
+    """
+    mem = psutil.virtual_memory()
+    available_gb = mem.available / (1024 ** 3)
+
+    if available_gb >= 1.5:
+        num_rows = 50_000_000
+        label = "full (50M rows)"
+    elif available_gb >= 0.5:
+        num_rows = 10_000_000
+        label = "medium (10M rows)"
+    else:
+        num_rows = 1_000_000
+        label = "small (1M rows)"
+
+    print(f"🧠 Memory-aware dataset selection:")
+    print(f"   Available RAM: {available_gb:.2f} GB")
+    print(f"   Selected size: {label}")
+    print(f"   Reason: {'Sufficient RAM for full benchmark' if num_rows == 50_000_000 else ('Low RAM – using medium dataset to stay within 80% memory usage limit' if num_rows == 10_000_000 else 'Very low RAM – using minimal dataset to avoid OOM')}")
+    return num_rows
 
 def generate_orders(num_rows=50_000_000):
     """
@@ -40,11 +73,24 @@ def generate_orders(num_rows=50_000_000):
     # Generate in chunks to avoid memory issues
     chunk_size = 5_000_000
     chunks = []
+    proc = psutil.Process(os.getpid())
     
     for i in range(0, num_rows, chunk_size):
         current_chunk = min(chunk_size, num_rows - i)
-        print(f"   Chunk {i//chunk_size + 1}/{(num_rows-1)//chunk_size + 1}: {current_chunk:,} rows")
-        
+        chunk_num = i // chunk_size + 1
+        total_chunks = (num_rows - 1) // chunk_size + 1
+        print(f"   Chunk {chunk_num}/{total_chunks}: {current_chunk:,} rows")
+
+        # Per-chunk memory pressure check (halt if > 80% used)
+        mem = psutil.virtual_memory()
+        if mem.percent > 80:
+            rss_mb = proc.memory_info().rss / (1024 ** 2)
+            print(f"⚠️  Memory pressure too high: {mem.percent:.1f}% used "
+                  f"(process RSS: {rss_mb:.0f} MB). Halting data generation.")
+            print(f"   Generated {i:,} rows so far. Consider re-running with a smaller dataset.")
+            print(f"   Tip: call auto_select_dataset_size() to pick a safer row count.")
+            break
+
         # Generate data
         chunk_data = {
             'order_id': range(i, i + current_chunk),
@@ -76,8 +122,18 @@ def generate_orders(num_rows=50_000_000):
         chunks.append(chunk_df)
     
     # Combine all chunks
+    if not chunks:
+        print("❌ No data generated — memory pressure was too high before the first chunk.")
+        print("   Tip: free memory or call auto_select_dataset_size() to pick a smaller dataset.")
+        return None
+
     orders_df = pd.concat(chunks, ignore_index=True)
-    print(f"✅ Generated {len(orders_df):,} orders")
+    actual = len(orders_df)
+    if actual < num_rows:
+        print(f"⚠️  Partial dataset: generated {actual:,} of {num_rows:,} rows "
+              f"(halted early due to memory pressure).")
+    else:
+        print(f"✅ Generated {actual:,} orders")
     
     return orders_df
 
@@ -202,8 +258,15 @@ def main():
     print("OLAP Benchmark Data Generator")
     print("=" * 60)
     
+    # Step 0: Auto-select dataset size based on available memory
+    num_orders = auto_select_dataset_size()
+    print()
+
     # Step 1: Generate base datasets
-    orders_df = generate_orders(50_000_000)
+    orders_df = generate_orders(num_orders)
+    if orders_df is None:
+        print("❌ Cannot continue: orders data generation failed (see memory error above).")
+        return
     customers_df = generate_customers(1_000_000)
     products_df = generate_products(10_000)
     
@@ -211,27 +274,32 @@ def main():
     orders_evolved_df = generate_orders_evolved(1_000_000)
     
     # Step 3: Save as Parquet (efficient, permanent)
+    # Use the actual row count in the filename to avoid confusion when
+    # auto_select_dataset_size() picks a smaller dataset than the full 50M.
+    orders_row_label = f"{num_orders // 1_000_000}M"
+    orders_parquet_name = f'orders_base_{orders_row_label}.parquet'
+
     print("\n📦 Saving as Parquet (permanent)...")
-    save_as_parquet(orders_df, 'orders_base_50M.parquet')
+    save_as_parquet(orders_df, orders_parquet_name)
     save_as_parquet(customers_df, 'customers.parquet')
     save_as_parquet(products_df, 'products.parquet')
     save_as_parquet(orders_evolved_df, 'orders_evolved_1M.parquet')
-    
+
     # Step 4: Save orders as CSV for Postgres (temporary)
     print("\n📦 Saving as CSV for Postgres (TEMPORARY - will be deleted)...")
     save_as_csv_for_postgres(orders_df, 'orders_temp.csv')
-    
+
     print("\n" + "=" * 60)
     print("✅ Data generation complete!")
     print("=" * 60)
     print("\nGenerated files:")
     print("  Parquet (permanent):")
-    print("    - orders_base_50M.parquet (~500MB)")
+    print(f"    - {orders_parquet_name}")
     print("    - orders_evolved_1M.parquet (~10MB)")
     print("    - customers.parquet (~50MB)")
     print("    - products.parquet (~1MB)")
     print("\n  CSV (temporary):")
-    print("    - orders_temp.csv (~5GB) - DELETE after Postgres load!")
+    print("    - orders_temp.csv - DELETE after Postgres load!")
     print("\nNext step: Run loaders/load_all.py")
 
 if __name__ == '__main__':

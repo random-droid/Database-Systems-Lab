@@ -28,8 +28,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from config.spark_config import get_spark_session
 from utils.spark_metrics import SparkMetricsCollector
-from utils.benchmark_timer import BenchmarkTimer
+from utils.benchmark_timer import BenchmarkTimer, inject_peak_memory, PeakMemoryCapture
 from utils.concept_validator import ConceptValidator
+from utils import get_orders_parquet_path
 
 # The query (same for all systems)
 QUERY = """
@@ -157,9 +158,10 @@ def benchmark_duckdb():
     conn = duckdb.connect(':memory:')
     
     # Setup external tables
-    conn.execute("""
+    _orders_parquet = get_orders_parquet_path()
+    conn.execute(f"""
         CREATE VIEW orders AS 
-        SELECT * FROM read_parquet('data/sample_data/orders_base_50M.parquet')
+        SELECT * FROM read_parquet('{_orders_parquet}')
     """)
     conn.execute("""
         CREATE VIEW customers AS
@@ -218,7 +220,7 @@ def benchmark_spark():
     spark = get_spark_session()
     
     # Register tables
-    spark.read.parquet('data/sample_data/orders_base_50M.parquet').createOrReplaceTempView('orders')
+    spark.read.parquet(get_orders_parquet_path()).createOrReplaceTempView('orders')
     spark.read.parquet('data/sample_data/customers.parquet').createOrReplaceTempView('customers')
     spark.read.parquet('data/sample_data/products.parquet').createOrReplaceTempView('products')
     
@@ -258,98 +260,105 @@ def run_all_systems():
     print("\nQuery: 3-table join (50M × 1M × 10K rows)")
     print("Expected: Forces spill-to-disk on 2GB RAM")
     print("="*80)
-    
-    all_results = {}
-    
-    # Benchmark each system
+
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
     try:
-        postgres_result = benchmark_postgres()
-        if postgres_result:
-            all_results['postgres'] = postgres_result
-    except Exception as e:
-        print(f"❌ Postgres benchmark failed: {e}")
-    
-    try:
-        duckdb_result = benchmark_duckdb()
-        all_results['duckdb'] = duckdb_result
-    except Exception as e:
-        print(f"❌ DuckDB benchmark failed: {e}")
-    
-    try:
-        spark_result = benchmark_spark()
-        all_results['spark'] = spark_result
-    except Exception as e:
-        print(f"❌ Spark benchmark failed: {e}")
-    
-    # Save results
-    output_dir = Path('results')
-    output_dir.mkdir(exist_ok=True)
-    
-    output_file = output_dir / 'use_case_2_complex_joins.json'
-    with open(output_file, 'w') as f:
-        json.dump(all_results, f, indent=2)
-    
-    print("\n" + "="*80)
-    print(" RESULTS SUMMARY")
-    print("="*80)
-    
-    for system, data in all_results.items():
-        print(f"\n{system.upper()}:")
-        if system == 'postgres':
-            for work_mem, metrics in data['results_by_work_mem'].items():
-                print(f"  {work_mem}:")
-                print(f"    Time: {metrics['total_time_seconds']}s")
-                print(f"    External merge: {metrics['external_merge']}")
-                print(f"    CPU/IO: {metrics['cpu_bound_percent']:.1f}% / {metrics['io_bound_percent']:.1f}%")
-        else:
-            print(f"  Time: {data['total_time_seconds']}s")
-            print(f"  CPU/IO: {data['cpu_bound_percent']:.1f}% / {data['io_bound_percent']:.1f}%")
-            if 'spill_metrics' in data:
-                spill = data['spill_metrics']
-                if spill['external_merge_occurred']:
-                    print(f"  🎯 SPILL: {spill['disk_spill_bytes'] / (1024**2):.1f} MB to disk")
-    
-    print(f"\n💾 Full results saved: {output_file}")
+        all_results = {}
 
-    # --- ConceptValidator: annotate results ---
-    validator = ConceptValidator()
+        # Benchmark each system
+        try:
+            postgres_result = benchmark_postgres()
+            if postgres_result:
+                all_results['postgres'] = postgres_result
+        except Exception as e:
+            print(f"❌ Postgres benchmark failed: {e}")
 
-    # Postgres: external merge sort validation (pick the most-stressed work_mem)
-    if "postgres" in all_results:
-        pg = all_results["postgres"]
-        results_by_mem = pg.get("results_by_work_mem", {})
-        # Use 64MB (most likely to trigger external merge)
-        pg_metrics = results_by_mem.get("64MB", next(iter(results_by_mem.values())) if results_by_mem else {})
-        pg_validation = validator.validate_postgres_external_merge(pg_metrics)
-        all_results["postgres"]["validation"] = pg_validation
-        print("\n🐘 POSTGRES CONCEPT VALIDATION:")
-        validator.print_validation(pg_validation)
+        try:
+            duckdb_result = benchmark_duckdb()
+            all_results['duckdb'] = duckdb_result
+        except Exception as e:
+            print(f"❌ DuckDB benchmark failed: {e}")
 
-    # DuckDB: out-of-core validation
-    if "duckdb" in all_results:
-        ddb = all_results["duckdb"]
-        ddb_validation = validator.validate_duckdb_out_of_core(ddb)
-        all_results["duckdb"]["validation"] = ddb_validation
-        print("\n🦆 DUCKDB CONCEPT VALIDATION:")
-        validator.print_validation(ddb_validation)
+        try:
+            spark_result = benchmark_spark()
+            all_results['spark'] = spark_result
+        except Exception as e:
+            print(f"❌ Spark benchmark failed: {e}")
 
-    # Spark: spill-to-disk validation
-    if "spark" in all_results:
-        sp = all_results["spark"]
-        spill_metrics = sp.get("spill_metrics", {})
-        perf_metrics = {k: v for k, v in sp.items() if k not in ("spill_metrics", "system", "query")}
-        sp_validation = validator.validate_spark_spill(spill_metrics, perf_metrics)
-        all_results["spark"]["validation"] = sp_validation
-        print("\n⚡ SPARK CONCEPT VALIDATION:")
-        validator.print_validation(sp_validation)
+        # Save results
+        output_dir = Path('results')
+        output_dir.mkdir(exist_ok=True)
 
-    # Re-save with validation blocks
-    with open(output_file, "w") as f:
-        json.dump(all_results, f, indent=2)
+        output_file = output_dir / 'use_case_2_complex_joins.json'
+        with open(output_file, 'w') as f:
+            json.dump(all_results, f, indent=2)
 
-    print(f"\nValidated results saved: {output_file}")
+        print("\n" + "="*80)
+        print(" RESULTS SUMMARY")
+        print("="*80)
 
-    return all_results
+        for system, data in all_results.items():
+            print(f"\n{system.upper()}:")
+            if system == 'postgres':
+                for work_mem, metrics in data['results_by_work_mem'].items():
+                    print(f"  {work_mem}:")
+                    print(f"    Time: {metrics['total_time_seconds']}s")
+                    print(f"    External merge: {metrics['external_merge']}")
+                    print(f"    CPU/IO: {metrics['cpu_bound_percent']:.1f}% / {metrics['io_bound_percent']:.1f}%")
+            else:
+                print(f"  Time: {data['total_time_seconds']}s")
+                print(f"  CPU/IO: {data['cpu_bound_percent']:.1f}% / {data['io_bound_percent']:.1f}%")
+                if 'spill_metrics' in data:
+                    spill = data['spill_metrics']
+                    if spill['external_merge_occurred']:
+                        print(f"  🎯 SPILL: {spill['disk_spill_bytes'] / (1024**2):.1f} MB to disk")
+
+        print(f"\n💾 Full results saved: {output_file}")
+
+        # --- ConceptValidator: annotate results ---
+        validator = ConceptValidator()
+
+        # Postgres: external merge sort validation (pick the most-stressed work_mem)
+        if "postgres" in all_results:
+            pg = all_results["postgres"]
+            results_by_mem = pg.get("results_by_work_mem", {})
+            pg_metrics = results_by_mem.get("64MB", next(iter(results_by_mem.values())) if results_by_mem else {})
+            pg_validation = validator.validate_postgres_external_merge(pg_metrics)
+            all_results["postgres"]["validation"] = pg_validation
+            print("\n🐘 POSTGRES CONCEPT VALIDATION:")
+            validator.print_validation(pg_validation)
+
+        # DuckDB: out-of-core validation
+        if "duckdb" in all_results:
+            ddb = all_results["duckdb"]
+            ddb_validation = validator.validate_duckdb_out_of_core(ddb)
+            all_results["duckdb"]["validation"] = ddb_validation
+            print("\n🦆 DUCKDB CONCEPT VALIDATION:")
+            validator.print_validation(ddb_validation)
+
+        # Spark: spill-to-disk validation
+        if "spark" in all_results:
+            sp = all_results["spark"]
+            spill_metrics = sp.get("spill_metrics", {})
+            perf_metrics = {k: v for k, v in sp.items() if k not in ("spill_metrics", "system", "query")}
+            sp_validation = validator.validate_spark_spill(spill_metrics, perf_metrics)
+            all_results["spark"]["validation"] = sp_validation
+            print("\n⚡ SPARK CONCEPT VALIDATION:")
+            validator.print_validation(sp_validation)
+
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(all_results, _peak_capture)
+
+        # Re-save with validation blocks
+        with open(output_file, "w") as f:
+            json.dump(all_results, f, indent=2)
+
+        print(f"\nValidated results saved: {output_file}")
+
+        return all_results
+    finally:
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 if __name__ == '__main__':
     results = run_all_systems()

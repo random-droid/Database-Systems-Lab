@@ -44,15 +44,23 @@ def load_postgres():
     """
     Load data into Postgres from CSV.
     CSV MUST be deleted by caller immediately after!
+
+    Returns False and prints a clear error + suggestion if Postgres is
+    unreachable or loading fails. Never raises an unhandled exception.
     """
     
     print("\n" + "="*60)
     print("🐘 Loading Postgres")
     print("="*60)
     
-    import psycopg2
-    from psycopg2 import sql
-    
+    try:
+        import psycopg2
+        from psycopg2 import sql
+    except ImportError:
+        print("❌ Postgres skipped: psycopg2 is not installed.")
+        print("   Fix: pip install psycopg2-binary")
+        return False
+
     # Connect (adjust connection params as needed)
     try:
         conn = psycopg2.connect(
@@ -60,13 +68,16 @@ def load_postgres():
             user=os.getenv('POSTGRES_USER', 'postgres'),
             password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
             host=os.getenv('POSTGRES_HOST', 'localhost'),
-            port=os.getenv('POSTGRES_PORT', '5432')
+            port=os.getenv('POSTGRES_PORT', '5432'),
+            connect_timeout=10,
         )
         cursor = conn.cursor()
         print("✅ Connected to Postgres")
     except Exception as e:
-        print(f"❌ Failed to connect to Postgres: {e}")
-        print("   Tip: Install Postgres or use Docker: docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15")
+        print(f"❌ Postgres skipped: could not connect — {e}")
+        print("   Fix: ensure Postgres is running and the POSTGRES_HOST / POSTGRES_USER /")
+        print("        POSTGRES_PASSWORD / POSTGRES_DB environment variables are set correctly.")
+        print("   Quick start: docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:15")
         return False
     
     try:
@@ -160,67 +171,128 @@ def load_postgres():
         
     except Exception as e:
         print(f"❌ Postgres load failed: {e}")
-        conn.rollback()
+        print("   Fix: check disk space, CSV file integrity, and Postgres table permissions.")
+        print("   Other engines (DuckDB) will still run.")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return False
         
     finally:
-        cursor.close()
-        conn.close()
+        try:
+            cursor.close()
+            conn.close()
+        except Exception:
+            pass
 
 def setup_duckdb_external():
     """
     Setup DuckDB with external tables (zero-copy, no duplication).
     
     Demonstrates: Disaggregated storage (15-721 Lecture 04)
+
+    DuckDB is a zero-dependency in-process engine and should always succeed.
+    Errors are caught and reported clearly.
     """
     
     print("\n" + "="*60)
     print("🦆 Setting up DuckDB External Tables")
     print("="*60)
     
-    import duckdb
-    
-    conn = duckdb.connect(':memory:')
-    
-    # Create EXTERNAL views (query Parquet directly, no data duplication)
-    conn.execute("""
-        CREATE VIEW orders AS 
-        SELECT * FROM read_parquet('data/sample_data/orders_base_50M.parquet')
-    """)
-    
-    conn.execute("""
-        CREATE VIEW customers AS
-        SELECT * FROM read_parquet('data/sample_data/customers.parquet')
-    """)
-    
-    conn.execute("""
-        CREATE VIEW products AS
-        SELECT * FROM read_parquet('data/sample_data/products.parquet')
-    """)
-    
-    # Verify
-    result = conn.execute("SELECT COUNT(*) FROM orders").fetchone()
-    print(f"✅ DuckDB external tables ready: {result[0]:,} orders")
-    print("✅ Storage used: 0GB (reads Parquet directly)")
-    
-    conn.close()
-    return True
+    try:
+        import duckdb
+    except ImportError:
+        print("❌ DuckDB skipped: duckdb is not installed.")
+        print("   Fix: pip install duckdb")
+        return False
+
+    try:
+        conn = duckdb.connect(':memory:')
+        
+        # Create EXTERNAL views (query Parquet directly, no data duplication)
+        from utils import get_orders_parquet_path
+        orders_parquet = get_orders_parquet_path()
+        conn.execute(f"""
+            CREATE VIEW orders AS 
+            SELECT * FROM read_parquet('{orders_parquet}')
+        """)
+        
+        conn.execute("""
+            CREATE VIEW customers AS
+            SELECT * FROM read_parquet('data/sample_data/customers.parquet')
+        """)
+        
+        conn.execute("""
+            CREATE VIEW products AS
+            SELECT * FROM read_parquet('data/sample_data/products.parquet')
+        """)
+        
+        # Verify
+        result = conn.execute("SELECT COUNT(*) FROM orders").fetchone()
+        print(f"✅ DuckDB external tables ready: {result[0]:,} orders")
+        print("✅ Storage used: 0GB (reads Parquet directly)")
+        
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ DuckDB setup failed: {e}")
+        print("   Fix: ensure Parquet files exist under data/sample_data/")
+        print("        Run python data_generator.py first.")
+        return False
 
 def setup_spark_config():
     """
     Create Spark configuration for memory-constrained environment.
     Spark will read Parquet files directly when queries run.
+
+    Returns False with a clear message if PySpark or Java are unavailable,
+    then skips Spark rather than crashing the overall load.
     """
     
     print("\n" + "="*60)
     print("⚡ Configuring Spark")
     print("="*60)
-    
-    print("✅ Spark configured to read Parquet directly")
-    print("✅ Storage used: 0GB (reads on-demand)")
-    print("   Config: 1GB driver, 1GB executor, 4 shuffle partitions")
-    
-    return True
+
+    try:
+        from pyspark.sql import SparkSession
+    except ImportError:
+        print("❌ Spark skipped: pyspark is not installed.")
+        print("   Fix: pip install pyspark  (also requires Java 8 or 11 on PATH)")
+        return False
+
+    import subprocess
+    java_ok = subprocess.call(
+        ["java", "-version"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ) == 0
+
+    if not java_ok:
+        print("❌ Spark skipped: Java runtime not found on PATH.")
+        print("   Fix: install Java 8 or 11 (e.g. sudo apt-get install default-jre)")
+        return False
+
+    try:
+        spark = (
+            SparkSession.builder
+            .appName("OLAP_Benchmark_Loader_Check")
+            .master("local[1]")
+            .config("spark.driver.memory", "512m")
+            .config("spark.ui.enabled", "false")
+            .getOrCreate()
+        )
+        version = spark.version
+        spark.stop()
+        print(f"✅ Spark configured to read Parquet directly (Spark {version})")
+        print("✅ Storage used: 0GB (reads on-demand)")
+        print("   Config: 1GB driver, 1GB executor, 4 shuffle partitions")
+        return True
+    except Exception as e:
+        print(f"❌ Spark skipped: could not start session — {e}")
+        print("   Fix: verify Java installation and PySpark compatibility.")
+        print("   Benchmarks that require Spark will be skipped automatically.")
+        return False
 
 def load_all():
     """Main loader orchestration."""
@@ -278,19 +350,26 @@ def load_all():
     spark_success = setup_spark_config()
     
     # Final summary
+    ready_systems = [s for s, ok in [("Postgres", postgres_success), ("DuckDB", duckdb_success), ("Spark", spark_success)] if ok]
+    failed_systems = [s for s, ok in [("Postgres", postgres_success), ("DuckDB", duckdb_success), ("Spark", spark_success)] if not ok]
+
     print("\n" + "="*80)
     print(" LOADING COMPLETE")
     print("="*80)
-    print(f"\n✅ Systems ready:")
-    print(f"   {'✅' if postgres_success else '❌'} Postgres: ~3GB (data + indexes)")
-    print(f"   {'✅' if duckdb_success else '❌'} DuckDB: 0GB (external tables)")
-    print(f"   {'✅' if spark_success else '❌'} Spark: 0GB (reads Parquet on-demand)")
+    print(f"\n📊 System status:")
+    print(f"   {'✅' if postgres_success else '❌'} Postgres: {'loaded (~3GB data + indexes)' if postgres_success else 'skipped (see error above)'}")
+    print(f"   {'✅' if duckdb_success else '❌'} DuckDB: {'ready (0GB, external tables)' if duckdb_success else 'skipped (see error above)'}")
+    print(f"   {'✅' if spark_success else '❌'} Spark: {'ready (0GB, reads Parquet on-demand)' if spark_success else 'skipped (see error above)'}")
     print(f"\n📊 Final storage: {post_cleanup_usage:.2f} GB / 10 GB limit")
-    print(f"📊 Storage breakdown:")
-    print(f"   - Postgres data: ~3GB")
+    print(f"   - Postgres data: ~3GB (if loaded)")
     print(f"   - Parquet files: ~0.5GB")
-    print(f"   - Total: ~{post_cleanup_usage:.2f}GB")
-    print("\n✅ All systems loaded successfully!")
+
+    if failed_systems:
+        print(f"\n⚠️  {len(failed_systems)} engine(s) skipped: {', '.join(failed_systems)}")
+        print(f"   Benchmarks requiring those engines will be skipped automatically.")
+    if ready_systems:
+        print(f"\n✅ {len(ready_systems)} engine(s) ready: {', '.join(ready_systems)}")
+
     print("\nNext steps:")
     print("  1. Run benchmarks: python -m benchmarks.use_case_2_complex_joins")
     print("  2. Or run all: python -m benchmarks.run_all")

@@ -23,8 +23,9 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from utils.benchmark_timer import BenchmarkTimer
+from utils.benchmark_timer import BenchmarkTimer, inject_peak_memory, PeakMemoryCapture
 from utils.concept_validator import ConceptValidator
+from utils import get_orders_parquet_path
 
 # Query targeting a specific region (benefits from clustering on region)
 REGION_QUERY_TEMPLATE = """
@@ -162,9 +163,10 @@ def benchmark_duckdb_zone_maps():
     # --- UNSORTED Parquet (default from generator, random order) ---
     print("\nStep 1: Query unsorted Parquet (random region distribution per row group)")
 
+    _orders_parquet = get_orders_parquet_path()
     conn_unsorted = duckdb.connect(":memory:")
     conn_unsorted.execute(
-        "CREATE VIEW orders AS SELECT * FROM read_parquet('data/sample_data/orders_base_50M.parquet')"
+        f"CREATE VIEW orders AS SELECT * FROM read_parquet('{_orders_parquet}')"
     )
 
     timer = BenchmarkTimer()
@@ -184,7 +186,7 @@ def benchmark_duckdb_zone_maps():
         conn_sort = duckdb.connect(":memory:")
         conn_sort.execute(f"""
             COPY (
-                SELECT * FROM read_parquet('data/sample_data/orders_base_50M.parquet')
+                SELECT * FROM read_parquet('{_orders_parquet}')
                 ORDER BY region
             ) TO '{sorted_path}' (FORMAT PARQUET, ROW_GROUP_SIZE 100000)
         """)
@@ -240,80 +242,87 @@ def run_all_systems():
     print(" How Physical Sort Order Affects Query Performance")
     print("=" * 80)
 
-    all_results = {}
-
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
     try:
-        postgres_result = benchmark_postgres_clustering()
-        if postgres_result:
-            all_results["postgres"] = postgres_result
-    except Exception as e:
-        print(f"Postgres clustering benchmark failed: {e}")
+        all_results = {}
 
-    try:
-        duckdb_result = benchmark_duckdb_zone_maps()
-        all_results["duckdb"] = duckdb_result
-    except Exception as e:
-        print(f"DuckDB zone map benchmark failed: {e}")
+        try:
+            postgres_result = benchmark_postgres_clustering()
+            if postgres_result:
+                all_results["postgres"] = postgres_result
+        except Exception as e:
+            print(f"Postgres clustering benchmark failed: {e}")
 
-    # Save results
-    output_dir = Path("results")
-    output_dir.mkdir(exist_ok=True)
+        try:
+            duckdb_result = benchmark_duckdb_zone_maps()
+            all_results["duckdb"] = duckdb_result
+        except Exception as e:
+            print(f"DuckDB zone map benchmark failed: {e}")
 
-    output_file = output_dir / "use_case_4_clustering.json"
-    with open(output_file, "w") as f:
-        json.dump(all_results, f, indent=2)
+        # Save results
+        output_dir = Path("results")
+        output_dir.mkdir(exist_ok=True)
 
-    # Summary
-    print("\n" + "=" * 80)
-    print(" RESULTS SUMMARY: Clustering Impact")
-    print("=" * 80)
+        output_file = output_dir / "use_case_4_clustering.json"
+        with open(output_file, "w") as f:
+            json.dump(all_results, f, indent=2)
 
-    for system, data in all_results.items():
-        print(f"\n{system.upper()}:")
-        if "error" in data:
-            print(f"  Error: {data['error']}")
-        else:
-            print(f"  Speedup from clustering: {data.get('speedup', 'N/A')}x")
-            print(f"  Demonstrates: {data.get('demonstrates', 'N/A')}")
-            print(f"  Maps to: {data.get('maps_to', 'N/A')}")
+        # Summary
+        print("\n" + "=" * 80)
+        print(" RESULTS SUMMARY: Clustering Impact")
+        print("=" * 80)
 
-    print(f"\nFull results: {output_file}")
+        for system, data in all_results.items():
+            print(f"\n{system.upper()}:")
+            if "error" in data:
+                print(f"  Error: {data['error']}")
+            else:
+                print(f"  Speedup from clustering: {data.get('speedup', 'N/A')}x")
+                print(f"  Demonstrates: {data.get('demonstrates', 'N/A')}")
+                print(f"  Maps to: {data.get('maps_to', 'N/A')}")
 
-    # --- ConceptValidator: annotate results ---
-    validator = ConceptValidator()
+        print(f"\nFull results: {output_file}")
 
-    if "postgres" in all_results:
-        pg = all_results["postgres"]
-        if "error" not in pg:
-            cold_time = pg.get("unclustered", {}).get("total_time_seconds", 1)
-            hot_time = pg.get("clustered", {}).get("total_time_seconds", 1)
+        # --- ConceptValidator: annotate results ---
+        validator = ConceptValidator()
+
+        if "postgres" in all_results:
+            pg = all_results["postgres"]
+            if "error" not in pg:
+                cold_time = pg.get("unclustered", {}).get("total_time_seconds", 1)
+                hot_time = pg.get("clustered", {}).get("total_time_seconds", 1)
+                validation = validator.validate_buffer_pool(cold_time, hot_time)
+                validation["lecture"] = "CMU 15-721 Lecture 04: Storage Models (Clustered Heap)"
+                validation["concept"] = "Physical sort order reduces random I/O via zone-map / clustered heap"
+                validation["proof"] = f"Unclustered: {cold_time:.3f}s → Clustered: {hot_time:.3f}s ({pg.get('speedup', 1):.1f}x)"
+                validation["validates"] = "Article 3: CLUSTER command enables sequential I/O for range predicates"
+                all_results["postgres"]["validation"] = validation
+                validator.print_validation(validation)
+
+        if "duckdb" in all_results:
+            ddb = all_results["duckdb"]
+            cold_time = ddb.get("unsorted", {}).get("total_time_seconds", 1)
+            hot_time = ddb.get("sorted", {}).get("total_time_seconds", 1)
             validation = validator.validate_buffer_pool(cold_time, hot_time)
-            # Customize for clustering context
-            validation["lecture"] = "CMU 15-721 Lecture 04: Storage Models (Clustered Heap)"
-            validation["concept"] = "Physical sort order reduces random I/O via zone-map / clustered heap"
-            validation["proof"] = f"Unclustered: {cold_time:.3f}s → Clustered: {hot_time:.3f}s ({pg.get('speedup', 1):.1f}x)"
-            validation["validates"] = "Article 3: CLUSTER command enables sequential I/O for range predicates"
-            all_results["postgres"]["validation"] = validation
+            validation["lecture"] = "CMU 15-721 Lecture 04: Storage Models (Zone Maps)"
+            validation["concept"] = "Parquet row group statistics enable predicate pushdown without CLUSTER"
+            validation["proof"] = f"Unsorted: {cold_time:.3f}s → Zone-mapped: {hot_time:.3f}s ({ddb.get('speedup', 1):.1f}x)"
+            validation["validates"] = "Article 3: Zone maps skip 75% of row groups for selective predicates"
+            all_results["duckdb"]["validation"] = validation
             validator.print_validation(validation)
 
-    if "duckdb" in all_results:
-        ddb = all_results["duckdb"]
-        cold_time = ddb.get("unsorted", {}).get("total_time_seconds", 1)
-        hot_time = ddb.get("sorted", {}).get("total_time_seconds", 1)
-        validation = validator.validate_buffer_pool(cold_time, hot_time)
-        validation["lecture"] = "CMU 15-721 Lecture 04: Storage Models (Zone Maps)"
-        validation["concept"] = "Parquet row group statistics enable predicate pushdown without CLUSTER"
-        validation["proof"] = f"Unsorted: {cold_time:.3f}s → Zone-mapped: {hot_time:.3f}s ({ddb.get('speedup', 1):.1f}x)"
-        validation["validates"] = "Article 3: Zone maps skip 75% of row groups for selective predicates"
-        all_results["duckdb"]["validation"] = validation
-        validator.print_validation(validation)
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(all_results, _peak_capture)
 
-    # Re-save with validation blocks
-    with open(output_file, "w") as f:
-        json.dump(all_results, f, indent=2)
+        # Re-save with validation blocks
+        with open(output_file, "w") as f:
+            json.dump(all_results, f, indent=2)
 
-    print(f"\nValidated results saved: {output_file}")
-    return all_results
+        print(f"\nValidated results saved: {output_file}")
+        return all_results
+    finally:
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 
 if __name__ == "__main__":

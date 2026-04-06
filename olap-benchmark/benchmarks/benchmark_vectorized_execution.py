@@ -30,6 +30,7 @@ from datetime import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.concept_validator import ConceptValidator
+from utils.benchmark_timer import inject_peak_memory, PeakMemoryCapture
 
 # Row counts
 N_ROWS_FULL = 10_000_000   # DuckDB and NumPy (fast, vectorized)
@@ -444,68 +445,75 @@ def run_vectorized_benchmark() -> dict:
     print(f" Query: heavy arithmetic (6 ops/row, 2 CASE, STDDEV, GROUP BY category×region)")
     print("=" * 70)
 
-    # Run benchmarks
-    duckdb_result = benchmark_duckdb_vectorized(N_ROWS_FULL)
-    numpy_result = benchmark_numpy_vectorized(N_ROWS_FULL)
-    scalar_result = benchmark_python_scalar(N_ROWS_SCALAR, N_ROWS_FULL)
-    postgres_result = benchmark_postgres_vectorized(N_ROWS_FULL)
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
+    try:
+        # Run benchmarks
+        duckdb_result = benchmark_duckdb_vectorized(N_ROWS_FULL)
+        numpy_result = benchmark_numpy_vectorized(N_ROWS_FULL)
+        scalar_result = benchmark_python_scalar(N_ROWS_SCALAR, N_ROWS_FULL)
+        postgres_result = benchmark_postgres_vectorized(N_ROWS_FULL)
 
-    # Compute speedups
-    speedup = {}
-    duck_ms = duckdb_result.get("execution_time_ms", 0) if duckdb_result.get("available") else 0
-    numpy_ms = numpy_result.get("execution_time_ms", 0) if numpy_result.get("available") else 0
-    scalar_ms = scalar_result.get("execution_time_ms", 0) if scalar_result.get("available") else 0
-    pg_ms = postgres_result.get("execution_time_ms", 0) if postgres_result.get("available") else 0
+        # Compute speedups
+        speedup = {}
+        duck_ms = duckdb_result.get("execution_time_ms", 0) if duckdb_result.get("available") else 0
+        numpy_ms = numpy_result.get("execution_time_ms", 0) if numpy_result.get("available") else 0
+        scalar_ms = scalar_result.get("execution_time_ms", 0) if scalar_result.get("available") else 0
+        pg_ms = postgres_result.get("execution_time_ms", 0) if postgres_result.get("available") else 0
 
-    if duck_ms > 0:
-        if scalar_ms > 0:
-            speedup["duckdb_vs_python_scalar"] = round(scalar_ms / duck_ms, 1)
-        if numpy_ms > 0:
-            speedup["duckdb_vs_numpy"] = round(numpy_ms / duck_ms, 1)
-        if pg_ms > 0:
-            speedup["duckdb_vs_postgres"] = round(pg_ms / duck_ms, 1)
-    if numpy_ms > 0 and scalar_ms > 0:
-        speedup["numpy_vs_python_scalar"] = round(scalar_ms / numpy_ms, 1)
+        if duck_ms > 0:
+            if scalar_ms > 0:
+                speedup["duckdb_vs_python_scalar"] = round(scalar_ms / duck_ms, 1)
+            if numpy_ms > 0:
+                speedup["duckdb_vs_numpy"] = round(numpy_ms / duck_ms, 1)
+            if pg_ms > 0:
+                speedup["duckdb_vs_postgres"] = round(pg_ms / duck_ms, 1)
+        if numpy_ms > 0 and scalar_ms > 0:
+            speedup["numpy_vs_python_scalar"] = round(scalar_ms / numpy_ms, 1)
 
-    # Concept validation
-    validator = ConceptValidator()
-    validation = validator.validate_vectorized_execution(
-        duckdb_result=duckdb_result,
-        numpy_result=numpy_result,
-        scalar_result=scalar_result,
-        postgres_result=postgres_result,
-        speedup=speedup,
-    )
+        # Concept validation
+        validator = ConceptValidator()
+        validation = validator.validate_vectorized_execution(
+            duckdb_result=duckdb_result,
+            numpy_result=numpy_result,
+            scalar_result=scalar_result,
+            postgres_result=postgres_result,
+            speedup=speedup,
+        )
 
-    # Print validation
-    ConceptValidator.print_validation(validation)
+        # Print validation
+        ConceptValidator.print_validation(validation)
 
-    result = {
-        "use_case": 6,
-        "benchmark": "vectorized_execution",
-        "row_count": N_ROWS_FULL,
-        "query": "Heavy arithmetic aggregation: SUM/STDDEV/CASE on 6 expressions per row",
-        "systems": {
-            "duckdb": duckdb_result,
-            "numpy_vectorized": numpy_result,
-            "python_scalar": scalar_result,
-            "postgres": postgres_result,
-        },
-        "speedup": speedup,
-        "validation": validation,
-        "run_timestamp": datetime.now().isoformat(),
-        "maps_to": "CMU 15-721 Lectures 10-12: Vectorized Execution, SIMD, Vectorized Operators",
-    }
+        result = {
+            "use_case": 6,
+            "benchmark": "vectorized_execution",
+            "row_count": N_ROWS_FULL,
+            "query": "Heavy arithmetic aggregation: SUM/STDDEV/CASE on 6 expressions per row",
+            "systems": {
+                "duckdb": duckdb_result,
+                "numpy_vectorized": numpy_result,
+                "python_scalar": scalar_result,
+                "postgres": postgres_result,
+            },
+            "speedup": speedup,
+            "validation": validation,
+            "run_timestamp": datetime.now().isoformat(),
+            "maps_to": "CMU 15-721 Lectures 10-12: Vectorized Execution, SIMD, Vectorized Operators",
+        }
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(result, _peak_capture)
 
-    # Save results
-    output_dir = Path("results")
-    output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / "use_case_6_vectorized_execution.json"
-    with open(output_file, "w") as f:
-        json.dump(result, f, indent=2, default=str)
+        # Save results
+        output_dir = Path("results")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / "use_case_6_vectorized_execution.json"
+        with open(output_file, "w") as f:
+            json.dump(result, f, indent=2, default=str)
 
-    print(f"\n\U0001f4be Results saved: {output_file.resolve()}")
-    return result
+        print(f"\n\U0001f4be Results saved: {output_file.resolve()}")
+        return result
+    finally:
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 
 if __name__ == "__main__":

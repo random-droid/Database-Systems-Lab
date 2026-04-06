@@ -36,6 +36,7 @@ from datetime import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.concept_validator import ConceptValidator
+from utils.benchmark_timer import inject_peak_memory, PeakMemoryCapture
 
 N_ROWS_FACT = 10_000_000  # fact table (orders)
 N_ROWS_DIM  = 500_000     # dimension table (products)
@@ -137,117 +138,124 @@ def run_query_optimization_benchmark() -> dict:
     print(" Strategy: predicate pushdown reduces scan before join")
     print("=" * 70)
 
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
     try:
-        import duckdb
-    except ImportError:
-        return {"error": "duckdb not installed"}
+        try:
+            import duckdb
+        except ImportError:
+            return {"error": "duckdb not installed"}
 
-    conn = duckdb.connect(":memory:")
-    conn.execute("SET threads=4")
+        conn = duckdb.connect(":memory:")
+        conn.execute("SET threads=4")
 
-    print("\nBuilding tables...")
-    _build_tables(conn)
+        print("\nBuilding tables...")
+        _build_tables(conn)
 
-    # Scenario A: No filter — full scan of 10M rows, hash build on 500K
-    query_a = """
-        SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total
-        FROM orders o
-        JOIN products p ON o.product_id = p.product_id
-        GROUP BY p.category
-        ORDER BY total DESC
-    """
+        # Scenario A: No filter — full scan of 10M rows, hash build on 500K
+        query_a = """
+            SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total
+            FROM orders o
+            JOIN products p ON o.product_id = p.product_id
+            GROUP BY p.category
+            ORDER BY total DESC
+        """
 
-    # Scenario B: Region filter — prunes ~80% of fact rows before join
-    query_b = """
-        SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total
-        FROM orders o
-        JOIN products p ON o.product_id = p.product_id
-        WHERE o.region = 'East'
-        GROUP BY p.category
-        ORDER BY total DESC
-    """
+        # Scenario B: Region filter — prunes ~80% of fact rows before join
+        query_b = """
+            SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total
+            FROM orders o
+            JOIN products p ON o.product_id = p.product_id
+            WHERE o.region = 'East'
+            GROUP BY p.category
+            ORDER BY total DESC
+        """
 
-    # Scenario C: Two predicates — prunes ~98% of fact rows before join
-    query_c = """
-        SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total
-        FROM orders o
-        JOIN products p ON o.product_id = p.product_id
-        WHERE o.region = 'East'
-          AND o.revenue > 90.0
-        GROUP BY p.category
-        ORDER BY total DESC
-    """
+        # Scenario C: Two predicates — prunes ~98% of fact rows before join
+        query_c = """
+            SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total
+            FROM orders o
+            JOIN products p ON o.product_id = p.product_id
+            WHERE o.region = 'East'
+              AND o.revenue > 90.0
+            GROUP BY p.category
+            ORDER BY total DESC
+        """
 
-    print("\nRunning scenarios (measuring predicate pushdown impact)...")
-    scenario_a = run_scenario(conn, "A: No filter (full scan)", query_a,
-                              "Full 10M-row scan + 500K hash build — optimizer sees no filter")
-    scenario_b = run_scenario(conn, "B: Region filter (~20% selectivity)", query_b,
-                              "WHERE region='East' prunes ~80% rows before hash join")
-    scenario_c = run_scenario(conn, "C: Double predicate (~2% selectivity)", query_c,
-                              "WHERE region='East' AND revenue>90 prunes ~98% rows")
+        print("\nRunning scenarios (measuring predicate pushdown impact)...")
+        scenario_a = run_scenario(conn, "A: No filter (full scan)", query_a,
+                                  "Full 10M-row scan + 500K hash build — optimizer sees no filter")
+        scenario_b = run_scenario(conn, "B: Region filter (~20% selectivity)", query_b,
+                                  "WHERE region='East' prunes ~80% rows before hash join")
+        scenario_c = run_scenario(conn, "C: Double predicate (~2% selectivity)", query_c,
+                                  "WHERE region='East' AND revenue>90 prunes ~98% rows")
 
-    conn.close()
+        conn.close()
 
-    t_a = scenario_a["execution_time_ms"]
-    t_b = scenario_b["execution_time_ms"]
-    t_c = scenario_c["execution_time_ms"]
+        t_a = scenario_a["execution_time_ms"]
+        t_b = scenario_b["execution_time_ms"]
+        t_c = scenario_c["execution_time_ms"]
 
-    speedup_b_vs_a = round(t_a / t_b, 2) if t_b > 0 else 0
-    speedup_c_vs_a = round(t_a / t_c, 2) if t_c > 0 else 0
-    speedup_c_vs_b = round(t_b / t_c, 2) if t_c > 0 else 0
+        speedup_b_vs_a = round(t_a / t_b, 2) if t_b > 0 else 0
+        speedup_c_vs_a = round(t_a / t_c, 2) if t_c > 0 else 0
+        speedup_c_vs_b = round(t_b / t_c, 2) if t_c > 0 else 0
 
-    comparison = {
-        "single_predicate_speedup": speedup_b_vs_a,
-        "double_predicate_speedup": speedup_c_vs_a,
-        "second_predicate_marginal_speedup": speedup_c_vs_b,
-        "optimizer_insight": (
-            f"1 predicate → {speedup_b_vs_a}x speedup (region prunes ~80% rows); "
-            f"2 predicates → {speedup_c_vs_a}x speedup (prunes ~98% rows); "
-            f"DuckDB optimizer pushes predicates below the join operator"
-        ),
-    }
+        comparison = {
+            "single_predicate_speedup": speedup_b_vs_a,
+            "double_predicate_speedup": speedup_c_vs_a,
+            "second_predicate_marginal_speedup": speedup_c_vs_b,
+            "optimizer_insight": (
+                f"1 predicate → {speedup_b_vs_a}x speedup (region prunes ~80% rows); "
+                f"2 predicates → {speedup_c_vs_a}x speedup (prunes ~98% rows); "
+                f"DuckDB optimizer pushes predicates below the join operator"
+            ),
+        }
 
-    print("\n" + "=" * 70)
-    print("PREDICATE PUSHDOWN SUMMARY")
-    print("=" * 70)
-    print(f"  No filter:         {t_a:.1f}ms (baseline)")
-    print(f"  Region filter:     {t_b:.1f}ms ({speedup_b_vs_a}x speedup)")
-    print(f"  Double predicate:  {t_c:.1f}ms ({speedup_c_vs_a}x speedup)")
-    print(f"  Join strategy:     {scenario_a['join_operators_detected']} (all scenarios)")
+        print("\n" + "=" * 70)
+        print("PREDICATE PUSHDOWN SUMMARY")
+        print("=" * 70)
+        print(f"  No filter:         {t_a:.1f}ms (baseline)")
+        print(f"  Region filter:     {t_b:.1f}ms ({speedup_b_vs_a}x speedup)")
+        print(f"  Double predicate:  {t_c:.1f}ms ({speedup_c_vs_a}x speedup)")
+        print(f"  Join strategy:     {scenario_a['join_operators_detected']} (all scenarios)")
 
-    validator = ConceptValidator()
-    validation = validator.validate_query_optimization(
-        scenario_small=scenario_b,
-        scenario_large=scenario_a,
-        scenario_filtered=scenario_c,
-        comparison=comparison,
-    )
-    ConceptValidator.print_validation(validation)
+        validator = ConceptValidator()
+        validation = validator.validate_query_optimization(
+            scenario_small=scenario_b,
+            scenario_large=scenario_a,
+            scenario_filtered=scenario_c,
+            comparison=comparison,
+        )
+        ConceptValidator.print_validation(validation)
 
-    result = {
-        "use_case": 9,
-        "benchmark": "query_optimization",
-        "fact_rows": N_ROWS_FACT,
-        "dim_rows": N_ROWS_DIM,
-        "scenarios": {
-            "no_filter": scenario_a,
-            "single_predicate": scenario_b,
-            "double_predicate": scenario_c,
-        },
-        "comparison": comparison,
-        "validation": validation,
-        "run_timestamp": datetime.now().isoformat(),
-        "maps_to": "CMU 15-721 Lectures 07-08: Query Optimization, Cost-Based Optimization",
-    }
+        result = {
+            "use_case": 9,
+            "benchmark": "query_optimization",
+            "fact_rows": N_ROWS_FACT,
+            "dim_rows": N_ROWS_DIM,
+            "scenarios": {
+                "no_filter": scenario_a,
+                "single_predicate": scenario_b,
+                "double_predicate": scenario_c,
+            },
+            "comparison": comparison,
+            "validation": validation,
+            "run_timestamp": datetime.now().isoformat(),
+            "maps_to": "CMU 15-721 Lectures 07-08: Query Optimization, Cost-Based Optimization",
+        }
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(result, _peak_capture)
 
-    output_dir = Path("results")
-    output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / "use_case_9_query_optimization.json"
-    with open(output_file, "w") as f:
-        json.dump(result, f, indent=2, default=str)
+        output_dir = Path("results")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / "use_case_9_query_optimization.json"
+        with open(output_file, "w") as f:
+            json.dump(result, f, indent=2, default=str)
 
-    print(f"\n💾 Results saved: {output_file.resolve()}")
-    return result
+        print(f"\n💾 Results saved: {output_file.resolve()}")
+        return result
+    finally:
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 
 if __name__ == "__main__":

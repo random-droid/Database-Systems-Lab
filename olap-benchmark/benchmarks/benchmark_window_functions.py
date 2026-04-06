@@ -32,6 +32,7 @@ from datetime import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.concept_validator import ConceptValidator
+from utils.benchmark_timer import inject_peak_memory, PeakMemoryCapture
 
 N_ROWS = 2_000_000   # 2M rows (window sort is memory-intensive; 5M times out)
 
@@ -294,55 +295,62 @@ def run_window_functions_benchmark() -> dict:
     print(" Ops: LAG, LEAD, ROW_NUMBER, RANK, SUM OVER, AVG OVER, delta")
     print("=" * 70)
 
-    duckdb_result = benchmark_duckdb_window(N_ROWS)
-    pandas_result = benchmark_pandas_window(N_ROWS)
-    postgres_result = benchmark_postgres_window(N_ROWS)
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
+    try:
+        duckdb_result = benchmark_duckdb_window(N_ROWS)
+        pandas_result = benchmark_pandas_window(N_ROWS)
+        postgres_result = benchmark_postgres_window(N_ROWS)
 
-    # Speedups
-    speedup = {}
-    duck_ms = duckdb_result.get("execution_time_ms", 0) if duckdb_result.get("available") else 0
-    pandas_ms = pandas_result.get("execution_time_ms", 0) if pandas_result.get("available") else 0
-    pg_ms = postgres_result.get("execution_time_ms", 0) if postgres_result.get("available") else 0
+        # Speedups
+        speedup = {}
+        duck_ms = duckdb_result.get("execution_time_ms", 0) if duckdb_result.get("available") else 0
+        pandas_ms = pandas_result.get("execution_time_ms", 0) if pandas_result.get("available") else 0
+        pg_ms = postgres_result.get("execution_time_ms", 0) if postgres_result.get("available") else 0
 
-    if duck_ms > 0:
-        if pandas_ms > 0:
-            speedup["duckdb_vs_pandas"] = round(pandas_ms / duck_ms, 1)
-        if pg_ms > 0:
-            speedup["duckdb_vs_postgres"] = round(pg_ms / duck_ms, 1)
+        if duck_ms > 0:
+            if pandas_ms > 0:
+                speedup["duckdb_vs_pandas"] = round(pandas_ms / duck_ms, 1)
+            if pg_ms > 0:
+                speedup["duckdb_vs_postgres"] = round(pg_ms / duck_ms, 1)
 
-    validator = ConceptValidator()
-    validation = validator.validate_window_functions(
-        duckdb_result=duckdb_result,
-        pandas_result=pandas_result,
-        postgres_result=postgres_result,
-        speedup=speedup,
-    )
-    ConceptValidator.print_validation(validation)
+        validator = ConceptValidator()
+        validation = validator.validate_window_functions(
+            duckdb_result=duckdb_result,
+            pandas_result=pandas_result,
+            postgres_result=postgres_result,
+            speedup=speedup,
+        )
+        ConceptValidator.print_validation(validation)
 
-    result = {
-        "use_case": 8,
-        "benchmark": "window_functions",
-        "row_count": N_ROWS,
-        "query": "LAG, LEAD, ROW_NUMBER, RANK, SUM OVER, AVG OVER partitioned by region",
-        "systems": {
-            "duckdb": duckdb_result,
-            "pandas": pandas_result,
-            "postgres": postgres_result,
-        },
-        "speedup": speedup,
-        "validation": validation,
-        "run_timestamp": datetime.now().isoformat(),
-        "maps_to": "CMU 15-721 Lecture 11: Advanced Operators (window functions)",
-    }
+        result = {
+            "use_case": 8,
+            "benchmark": "window_functions",
+            "row_count": N_ROWS,
+            "query": "LAG, LEAD, ROW_NUMBER, RANK, SUM OVER, AVG OVER partitioned by region",
+            "systems": {
+                "duckdb": duckdb_result,
+                "pandas": pandas_result,
+                "postgres": postgres_result,
+            },
+            "speedup": speedup,
+            "validation": validation,
+            "run_timestamp": datetime.now().isoformat(),
+            "maps_to": "CMU 15-721 Lecture 11: Advanced Operators (window functions)",
+        }
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(result, _peak_capture)
 
-    output_dir = Path("results")
-    output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / "use_case_8_window_functions.json"
-    with open(output_file, "w") as f:
-        json.dump(result, f, indent=2, default=str)
+        output_dir = Path("results")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / "use_case_8_window_functions.json"
+        with open(output_file, "w") as f:
+            json.dump(result, f, indent=2, default=str)
 
-    print(f"\n\U0001f4be Results saved: {output_file.resolve()}")
-    return result
+        print(f"\n\U0001f4be Results saved: {output_file.resolve()}")
+        return result
+    finally:
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 
 if __name__ == "__main__":

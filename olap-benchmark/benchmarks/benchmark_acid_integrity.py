@@ -35,6 +35,7 @@ from datetime import datetime
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.concept_validator import ConceptValidator
+from utils.benchmark_timer import inject_peak_memory, PeakMemoryCapture
 
 
 def _try_import_pyspark():
@@ -501,94 +502,101 @@ def run_acid_integrity_benchmark() -> dict:
     print(" Sub-tests: A=Parquet lost-update | B=Delta OCC | C=Delta MVCC")
     print("=" * 70)
 
-    spark_available, delta_available = _try_import_pyspark()
-    if not spark_available:
-        print("\n⚠️  PySpark not found — sub-tests B & C will be inconclusive")
-        print("   Install: pip install pyspark delta-spark")
-    elif not delta_available:
-        print("\n⚠️  delta-spark not found — sub-tests B & C will be inconclusive")
-        print("   Install: pip install delta-spark")
-    else:
-        print("\n✅ PySpark + delta-spark available — running all three live sub-tests")
-
-    tmp_dir = tempfile.mkdtemp(prefix="acid_benchmark_")
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
     try:
-        # Sub-test A does not need Spark (pure pyarrow)
-        parquet_result = run_parquet_lost_update_test(tmp_dir)
-        # Sub-tests B and C share a single SparkSession to avoid double JVM startup cost
-        delta_conflict = run_delta_conflict_test(tmp_dir, spark_available, delta_available)
-        delta_snapshot = run_delta_snapshot_test(tmp_dir, spark_available, delta_available)
+        spark_available, delta_available = _try_import_pyspark()
+        if not spark_available:
+            print("\n⚠️  PySpark not found — sub-tests B & C will be inconclusive")
+            print("   Install: pip install pyspark delta-spark")
+        elif not delta_available:
+            print("\n⚠️  delta-spark not found — sub-tests B & C will be inconclusive")
+            print("   Install: pip install delta-spark")
+        else:
+            print("\n✅ PySpark + delta-spark available — running all three live sub-tests")
+
+        tmp_dir = tempfile.mkdtemp(prefix="acid_benchmark_")
+        try:
+            # Sub-test A does not need Spark (pure pyarrow)
+            parquet_result = run_parquet_lost_update_test(tmp_dir)
+            # Sub-tests B and C share a single SparkSession to avoid double JVM startup cost
+            delta_conflict = run_delta_conflict_test(tmp_dir, spark_available, delta_available)
+            delta_snapshot = run_delta_snapshot_test(tmp_dir, spark_available, delta_available)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        # Top-level proof block
+        lost_update = parquet_result.get("lost_update_confirmed", False)
+        occ_working = delta_conflict.get("occ_working", False)
+        mvcc_working = delta_snapshot.get("snapshot_isolation_confirmed", False)
+        rows_lost = parquet_result.get("rows_silently_lost", 0)
+        exc_msg = delta_conflict.get("writer_a_exception") or ""
+
+        # Extract exception class name from Java stack trace message
+        # e.g. "...io.delta.exceptions.ConcurrentAppendException: [DELTA_CONCURRENT..." → "ConcurrentAppendException"
+        exc_type = "N/A"
+        if exc_msg and exc_msg not in ("None", "", "N/A"):
+            for segment in exc_msg.split():
+                if "Exception" in segment or "Error" in segment:
+                    exc_type = segment.rstrip(":").split(".")[-1]
+                    break
+            if exc_type == "N/A" and occ_working:
+                exc_type = "ConcurrentAppendException"
+
+        proof = {
+            "lost_update_confirmed": lost_update,
+            "occ_confirmed": occ_working,
+            "mvcc_confirmed": mvcc_working,
+            "rows_lost_in_parquet": rows_lost,
+            "exception_message": exc_msg,
+            "exception_type": exc_type if exc_type != "N/A" else ("ConcurrentAppendException" if occ_working else "N/A"),
+            "conclusion": (
+                f"All three proofs confirmed: {rows_lost:,} Parquet rows silently lost; "
+                f"Delta OCC raised {exc_type}; MVCC snapshot isolation verified"
+                if (lost_update and occ_working and mvcc_working)
+                else (
+                    f"Partial: Lost-update confirmed ({rows_lost:,} rows overwritten in Parquet); "
+                    "Delta sub-tests inconclusive — verify Java + delta-spark are installed"
+                    if lost_update
+                    else "Partial results — install pyspark + delta-spark for full validation"
+                )
+            ),
+            "maps_to": "CMU 15-721 Lectures 13-15: OCC / MVCC / Concurrency Control",
+        }
+
+        # Annotate with ConceptValidator
+        validator = ConceptValidator()
+        validation = validator.validate_acid_integrity(
+            parquet_result=parquet_result,
+            delta_conflict=delta_conflict,
+            delta_snapshot=delta_snapshot,
+        )
+
+        print("\n" + "=" * 70)
+        print(" ACID CONCEPT VALIDATION")
+        print("=" * 70)
+        validator.print_validation(validation)
+
+        results = {
+            "parquet_lost_update": parquet_result,
+            "delta_conflict": delta_conflict,
+            "delta_snapshot": delta_snapshot,
+            "proof": proof,
+            "validation": validation,
+        }
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(results, _peak_capture)
+
+        output_dir = Path(__file__).parent.parent / "results"
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / "use_case_5_acid_integrity.json"
+        with open(output_file, "w") as f:
+            json.dump(results, f, indent=2)
+
+        print(f"\n💾 Results saved: {output_file}")
+        return results
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-    # Top-level proof block
-    lost_update = parquet_result.get("lost_update_confirmed", False)
-    occ_working = delta_conflict.get("occ_working", False)
-    mvcc_working = delta_snapshot.get("snapshot_isolation_confirmed", False)
-    rows_lost = parquet_result.get("rows_silently_lost", 0)
-    exc_msg = delta_conflict.get("writer_a_exception") or ""
-
-    # Extract exception class name from Java stack trace message
-    # e.g. "...io.delta.exceptions.ConcurrentAppendException: [DELTA_CONCURRENT..." → "ConcurrentAppendException"
-    exc_type = "N/A"
-    if exc_msg and exc_msg not in ("None", "", "N/A"):
-        for segment in exc_msg.split():
-            if "Exception" in segment or "Error" in segment:
-                exc_type = segment.rstrip(":").split(".")[-1]
-                break
-        if exc_type == "N/A" and occ_working:
-            exc_type = "ConcurrentAppendException"
-
-    proof = {
-        "lost_update_confirmed": lost_update,
-        "occ_confirmed": occ_working,
-        "mvcc_confirmed": mvcc_working,
-        "rows_lost_in_parquet": rows_lost,
-        "exception_message": exc_msg,
-        "exception_type": exc_type if exc_type != "N/A" else ("ConcurrentAppendException" if occ_working else "N/A"),
-        "conclusion": (
-            f"All three proofs confirmed: {rows_lost:,} Parquet rows silently lost; "
-            f"Delta OCC raised {exc_type}; MVCC snapshot isolation verified"
-            if (lost_update and occ_working and mvcc_working)
-            else (
-                f"Partial: Lost-update confirmed ({rows_lost:,} rows overwritten in Parquet); "
-                "Delta sub-tests inconclusive — verify Java + delta-spark are installed"
-                if lost_update
-                else "Partial results — install pyspark + delta-spark for full validation"
-            )
-        ),
-        "maps_to": "CMU 15-721 Lectures 13-15: OCC / MVCC / Concurrency Control",
-    }
-
-    # Annotate with ConceptValidator
-    validator = ConceptValidator()
-    validation = validator.validate_acid_integrity(
-        parquet_result=parquet_result,
-        delta_conflict=delta_conflict,
-        delta_snapshot=delta_snapshot,
-    )
-
-    print("\n" + "=" * 70)
-    print(" ACID CONCEPT VALIDATION")
-    print("=" * 70)
-    validator.print_validation(validation)
-
-    results = {
-        "parquet_lost_update": parquet_result,
-        "delta_conflict": delta_conflict,
-        "delta_snapshot": delta_snapshot,
-        "proof": proof,
-        "validation": validation,
-    }
-
-    output_dir = Path(__file__).parent.parent / "results"
-    output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / "use_case_5_acid_integrity.json"
-    with open(output_file, "w") as f:
-        json.dump(results, f, indent=2)
-
-    print(f"\n💾 Results saved: {output_file}")
-    return results
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 
 if __name__ == "__main__":

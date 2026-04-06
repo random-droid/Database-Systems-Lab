@@ -25,8 +25,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from config.spark_config import get_spark_session
 from utils.spark_metrics import SparkMetricsCollector
-from utils.benchmark_timer import BenchmarkTimer
+from utils.benchmark_timer import BenchmarkTimer, inject_peak_memory, PeakMemoryCapture
 from utils.concept_validator import ConceptValidator
+from utils import get_orders_parquet_path
 
 # The dashboard query — same SQL for all systems
 DASHBOARD_QUERY = """
@@ -154,8 +155,9 @@ def benchmark_duckdb():
     conn = duckdb.connect(":memory:")
 
     # Setup external Parquet views (zero-copy)
+    _orders_parquet = get_orders_parquet_path()
     conn.execute(
-        "CREATE VIEW orders AS SELECT * FROM read_parquet('data/sample_data/orders_base_50M.parquet')"
+        f"CREATE VIEW orders AS SELECT * FROM read_parquet('{_orders_parquet}')"
     )
 
     timer = BenchmarkTimer()
@@ -196,7 +198,7 @@ def benchmark_spark():
 
     spark = get_spark_session()
 
-    spark.read.parquet("data/sample_data/orders_base_50M.parquet").createOrReplaceTempView("orders")
+    spark.read.parquet(get_orders_parquet_path()).createOrReplaceTempView("orders")
 
     collector = SparkMetricsCollector(spark)
     timer = BenchmarkTimer()
@@ -241,78 +243,86 @@ def run_all_systems():
     print("Expected: Column stores (DuckDB) dramatically faster than row stores (Postgres)")
     print("=" * 80)
 
-    all_results = {}
-
+    _peak_capture = PeakMemoryCapture()
+    _peak_capture.__enter__()
     try:
-        postgres_result = benchmark_postgres()
-        if postgres_result:
-            all_results["postgres"] = postgres_result
-    except Exception as e:
-        print(f"Postgres benchmark failed: {e}")
+        all_results = {}
 
-    try:
-        duckdb_result = benchmark_duckdb()
-        all_results["duckdb"] = duckdb_result
-    except Exception as e:
-        print(f"DuckDB benchmark failed: {e}")
+        try:
+            postgres_result = benchmark_postgres()
+            if postgres_result:
+                all_results["postgres"] = postgres_result
+        except Exception as e:
+            print(f"Postgres benchmark failed: {e}")
 
-    try:
-        spark_result = benchmark_spark()
-        all_results["spark"] = spark_result
-    except Exception as e:
-        print(f"Spark benchmark failed: {e}")
+        try:
+            duckdb_result = benchmark_duckdb()
+            all_results["duckdb"] = duckdb_result
+        except Exception as e:
+            print(f"DuckDB benchmark failed: {e}")
 
-    # Save results
-    output_dir = Path("results")
-    output_dir.mkdir(exist_ok=True)
+        try:
+            spark_result = benchmark_spark()
+            all_results["spark"] = spark_result
+        except Exception as e:
+            print(f"Spark benchmark failed: {e}")
 
-    output_file = output_dir / "use_case_1_dashboards.json"
-    with open(output_file, "w") as f:
-        json.dump(all_results, f, indent=2)
+        # Save results
+        output_dir = Path("results")
+        output_dir.mkdir(exist_ok=True)
 
-    # Summary
-    print("\n" + "=" * 80)
-    print(" RESULTS SUMMARY: Dashboard Query")
-    print("=" * 80)
+        output_file = output_dir / "use_case_1_dashboards.json"
+        with open(output_file, "w") as f:
+            json.dump(all_results, f, indent=2)
 
-    timings = {}
-    for system, data in all_results.items():
-        t = data["total_time_seconds"]
-        timings[system] = t
-        ch = data.get("cold_hot", {})
-        speedup = ch.get("speedup", "N/A")
-        print(f"\n{system.upper()}:")
-        print(f"  Execution time:   {t:.3f}s")
-        print(f"  Cold/Hot speedup: {speedup}x")
-        print(f"  CPU/IO split:     {data.get('cpu_bound_percent', 0):.1f}% / {data.get('io_bound_percent', 0):.1f}%")
-        print(f"  Demonstrates:     {data.get('demonstrates', 'N/A')}")
+        # Summary
+        print("\n" + "=" * 80)
+        print(" RESULTS SUMMARY: Dashboard Query")
+        print("=" * 80)
 
-    if "postgres" in timings and "duckdb" in timings:
-        speedup = timings["postgres"] / timings["duckdb"]
-        print(f"\nDuckDB vs Postgres: {speedup:.1f}x faster")
-        print("Proves: Vectorized column store beats tuple-at-a-time row store for analytics")
+        timings = {}
+        for system, data in all_results.items():
+            t = data["total_time_seconds"]
+            timings[system] = t
+            ch = data.get("cold_hot", {})
+            speedup = ch.get("speedup", "N/A")
+            print(f"\n{system.upper()}:")
+            print(f"  Execution time:   {t:.3f}s")
+            print(f"  Cold/Hot speedup: {speedup}x")
+            print(f"  CPU/IO split:     {data.get('cpu_bound_percent', 0):.1f}% / {data.get('io_bound_percent', 0):.1f}%")
+            print(f"  Demonstrates:     {data.get('demonstrates', 'N/A')}")
 
-    print(f"\nFull results: {output_file}")
+        if "postgres" in timings and "duckdb" in timings:
+            speedup = timings["postgres"] / timings["duckdb"]
+            print(f"\nDuckDB vs Postgres: {speedup:.1f}x faster")
+            print("Proves: Vectorized column store beats tuple-at-a-time row store for analytics")
 
-    # --- ConceptValidator: annotate results ---
-    validator = ConceptValidator()
+        print(f"\nFull results: {output_file}")
 
-    # Buffer pool validation for each system
-    for system, data in all_results.items():
-        cold_hot = data.get("cold_hot", {})
-        if cold_hot:
-            cold_time = cold_hot.get("cold", {}).get("time_seconds", 1)
-            hot_time = cold_hot.get("hot", {}).get("time_seconds", 1)
-            validation = validator.validate_buffer_pool(cold_time, hot_time)
-            all_results[system]["validation"] = validation
-            validator.print_validation(validation)
+        # --- ConceptValidator: annotate results ---
+        validator = ConceptValidator()
 
-    # Re-save with validation blocks
-    with open(output_file, "w") as f:
-        json.dump(all_results, f, indent=2)
+        # Buffer pool validation for each system
+        for system, data in all_results.items():
+            cold_hot = data.get("cold_hot", {})
+            if cold_hot:
+                cold_time = cold_hot.get("cold", {}).get("time_seconds", 1)
+                hot_time = cold_hot.get("hot", {}).get("time_seconds", 1)
+                validation = validator.validate_buffer_pool(cold_time, hot_time)
+                all_results[system]["validation"] = validation
+                validator.print_validation(validation)
 
-    print(f"\nValidated results saved: {output_file}")
-    return all_results
+        _peak_capture.__exit__(None, None, None)
+        inject_peak_memory(all_results, _peak_capture)
+
+        # Re-save with validation blocks
+        with open(output_file, "w") as f:
+            json.dump(all_results, f, indent=2)
+
+        print(f"\nValidated results saved: {output_file}")
+        return all_results
+    finally:
+        _peak_capture.__exit__(None, None, None)  # idempotent — no-op if already stopped
 
 
 if __name__ == "__main__":
