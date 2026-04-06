@@ -1763,6 +1763,105 @@ export default function Dashboard() {
           total={USE_CASES.length}
         />
 
+        {/* Research Narrative — Story Arc */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-4 h-4 text-primary/70" />
+            <h2 className="text-sm font-mono uppercase tracking-widest text-muted-foreground">Research Narrative</h2>
+            <span className="flex-1 h-px bg-border/60" />
+            <a
+              href="https://15721.courses.cs.cmu.edu"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-mono text-muted-foreground/60 hover:text-primary transition-colors uppercase tracking-wider"
+            >
+              CMU 15-721 ↗
+            </a>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+            {[
+              {
+                act: "Act I",
+                title: "Speed",
+                question: "How fast?",
+                icon: <Zap className="w-4 h-4" />,
+                cases: "UC1 · UC2",
+                proof: "5.9× buffer cache · 19K temp blocks",
+                lectures: "L05 · L06",
+                color: "text-sky-400",
+                border: "border-sky-500/20",
+                bg: "bg-sky-500/5",
+              },
+              {
+                act: "Act II",
+                title: "Mechanics",
+                question: "What makes them fast?",
+                icon: <HardDrive className="w-4 h-4" />,
+                cases: "UC3 · UC4 · UC7",
+                proof: "6.66× compression · 3.12× clustering",
+                lectures: "L03 · L04",
+                color: "text-orange-400",
+                border: "border-orange-500/20",
+                bg: "bg-orange-500/5",
+              },
+              {
+                act: "Act III",
+                title: "Intelligence",
+                question: "How smart?",
+                icon: <Filter className="w-4 h-4" />,
+                cases: "UC8 · UC9 · UC10",
+                proof: "1.57× predicate push · 7 window ops fused",
+                lectures: "L07-08 · L09 · L11",
+                color: "text-indigo-400",
+                border: "border-indigo-500/20",
+                bg: "bg-indigo-500/5",
+              },
+              {
+                act: "Act IV",
+                title: "Performance",
+                question: "Why vectorization?",
+                icon: <Cpu className="w-4 h-4" />,
+                cases: "UC6",
+                proof: "25× SIMD vs row-at-a-time Volcano",
+                lectures: "L10-12",
+                color: "text-emerald-400",
+                border: "border-emerald-500/20",
+                bg: "bg-emerald-500/5",
+              },
+              {
+                act: "Act V",
+                title: "Integrity",
+                question: "But is it safe?",
+                icon: <ShieldAlert className="w-4 h-4" />,
+                cases: "UC5",
+                proof: "Parquet lost 500K rows silently · Delta caught it",
+                lectures: "L13-15",
+                color: "text-red-400",
+                border: "border-red-500/20",
+                bg: "bg-red-500/5",
+              },
+            ].map((arc) => (
+              <div key={arc.act} className={`rounded-xl border ${arc.border} ${arc.bg} p-4 flex flex-col gap-2`}>
+                <div className="flex items-center gap-2">
+                  <span className={`${arc.color}`}>{arc.icon}</span>
+                  <span className={`text-[10px] font-mono uppercase tracking-widest ${arc.color}`}>{arc.act}</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-sm leading-tight">{arc.title}</p>
+                  <p className="text-[10px] text-muted-foreground italic mt-0.5">"{arc.question}"</p>
+                </div>
+                <p className="text-[11px] text-foreground/80 leading-snug flex-1">{arc.proof}</p>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[9px] font-mono text-muted-foreground/60">{arc.cases}</span>
+                  <Badge variant="outline" className={`text-[9px] font-mono px-1.5 py-0 ${arc.color} border-current/30 bg-transparent`}>
+                    {arc.lectures}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* Live Logs */}
         {activeLogStream && (
           <section className="animate-in fade-in slide-in-from-top-4 duration-500">
@@ -1823,6 +1922,57 @@ export default function Dashboard() {
               </TableBody>
             </Table>
           </div>
+        </section>
+
+        {/* Research Reference Footer */}
+        <section className="pt-8 border-t border-border/40">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+            <div className="max-w-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-5 h-5 rounded bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
+                  <Sparkles className="w-3 h-3 text-purple-400" />
+                </div>
+                <span className="text-xs font-mono uppercase tracking-widest text-purple-400">Academic Reference</span>
+              </div>
+              <h3 className="font-bold text-base mb-1">CMU 15-721: Advanced Database Systems</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Taught by <span className="text-foreground font-medium">Andy Pavlo</span> at Carnegie Mellon University.
+                Covers the internals of modern database management systems — storage, execution, optimization, and concurrency control.
+                This suite empirically validates every major lecture topic with live workloads.
+              </p>
+              <a
+                href="https://15721.courses.cs.cmu.edu"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 mt-3 text-xs font-mono text-primary hover:text-primary/80 transition-colors"
+              >
+                15721.courses.cs.cmu.edu ↗
+              </a>
+            </div>
+
+            <div className="flex flex-col gap-2 min-w-[240px]">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1">Lecture Coverage</span>
+              {[
+                { lectures: "L03–L04", topic: "Storage Models, Compression, Zone Maps", uc: "UC3 · UC4 · UC7" },
+                { lectures: "L05–L06", topic: "Buffer Pool, External Merge Sort", uc: "UC1 · UC2" },
+                { lectures: "L07–L09", topic: "Optimization, Join Algorithms, Skew", uc: "UC9 · UC10" },
+                { lectures: "L10–L12", topic: "Vectorized Execution, SIMD, Window Ops", uc: "UC6 · UC8" },
+                { lectures: "L13–L15", topic: "OCC / MVCC / Concurrency Control", uc: "UC5" },
+              ].map((row) => (
+                <div key={row.lectures} className="flex items-start gap-2 text-xs">
+                  <Badge variant="outline" className="shrink-0 bg-purple-500/10 text-purple-400 border-purple-500/20 font-mono text-[10px] rounded-sm px-1.5">
+                    {row.lectures}
+                  </Badge>
+                  <span className="text-muted-foreground leading-tight flex-1">{row.topic}</span>
+                  <span className="shrink-0 text-[9px] font-mono text-muted-foreground/50">{row.uc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-[10px] text-muted-foreground/40 font-mono mt-8 text-center">
+            Built with Replit · DuckDB · Apache Spark · PostgreSQL · Delta Lake · Parquet
+          </p>
         </section>
 
       </main>
