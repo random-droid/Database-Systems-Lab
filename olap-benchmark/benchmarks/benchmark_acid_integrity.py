@@ -71,7 +71,7 @@ def run_parquet_lost_update_test(tmp_dir: str) -> dict:
     print("SUB-TEST A: Parquet Lost-Update (concurrent Parquet file writers)")
     print("=" * 70)
 
-    rows_per_writer = 100_000
+    rows_per_writer = 500_000
     target_path = os.path.join(tmp_dir, "shared_table.parquet")
 
     write_results = {
@@ -82,12 +82,14 @@ def run_parquet_lost_update_test(tmp_dir: str) -> dict:
     }
 
     def _build_table(writer: str, n: int) -> pa.Table:
-        ids = list(range(n))
-        values = [i * (2 if writer == "A" else 3) for i in range(n)]
-        writers = [writer] * n
-        return pa.table({"id": pa.array(ids, type=pa.int64()),
-                         "value": pa.array(values, type=pa.int64()),
-                         "writer": pa.array(writers)})
+        import numpy as np
+        ids = np.arange(n, dtype=np.int64)
+        multiplier = 2 if writer == "A" else 3
+        values = ids * multiplier
+        writers_col = pa.array([writer] * n)
+        return pa.table({"id": pa.array(ids),
+                         "value": pa.array(values),
+                         "writer": writers_col})
 
     def writer_a():
         t0 = time.time()
@@ -355,11 +357,9 @@ def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available
         }
 
     finally:
-        if spark is not None:
-            try:
-                spark.stop()
-            except Exception:
-                pass
+        # Do NOT stop Spark here — Sub-test C will reuse the JVM via getOrCreate()
+        # Stopping here kills the JVM and forces an expensive restart for Sub-test C
+        pass
 
     return result
 
@@ -488,7 +488,9 @@ def run_acid_integrity_benchmark() -> dict:
 
     tmp_dir = tempfile.mkdtemp(prefix="acid_benchmark_")
     try:
+        # Sub-test A does not need Spark (pure pyarrow)
         parquet_result = run_parquet_lost_update_test(tmp_dir)
+        # Sub-tests B and C share a single SparkSession to avoid double JVM startup cost
         delta_conflict = run_delta_conflict_test(tmp_dir, spark_available, delta_available)
         delta_snapshot = run_delta_snapshot_test(tmp_dir, spark_available, delta_available)
     finally:
