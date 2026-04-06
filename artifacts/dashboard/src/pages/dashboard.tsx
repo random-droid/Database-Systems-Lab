@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2, ShieldAlert, Cpu, Archive, TrendingUp, Filter, Scale } from "lucide-react";
+import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2, ShieldAlert, Cpu, Archive, TrendingUp, Filter, Scale, Sparkles, Rocket } from "lucide-react";
 
 interface ValidationData {
   lecture: string;
@@ -336,6 +336,83 @@ const TRACEABILITY_MATRIX = [
   { benchmark: "Predicate pushdown (0, 1, 2 preds)", lecture: "Lectures 07–08", concept: "Cost-Based Optimization / Predicate Pushdown", proof: "2-predicate query 1.5x faster; HASH_JOIN selected in all scenarios" },
   { benchmark: "90% West skew vs uniform", lecture: "Lecture 09", concept: "Join Skew / Partition Imbalance", proof: "4.5x partition imbalance; heavy agg (COUNT DISTINCT) slowdown visible" },
 ];
+
+const HEADLINE_STATS = [
+  {
+    value: "25×",
+    label: "Vectorized Speedup",
+    sub: "DuckDB SIMD vs row-at-a-time Volcano",
+    color: "text-indigo-400",
+    border: "border-indigo-500/25",
+    glow: "shadow-[0_0_12px_rgba(99,102,241,0.15)]",
+    bg: "bg-indigo-500/8",
+  },
+  {
+    value: "6.66×",
+    label: "Compression Ratio",
+    sub: "Parquet/Zstd vs CSV on 10M rows",
+    color: "text-emerald-400",
+    border: "border-emerald-500/25",
+    glow: "shadow-[0_0_12px_rgba(52,211,153,0.15)]",
+    bg: "bg-emerald-500/8",
+  },
+  {
+    value: "3.12×",
+    label: "Clustering Speedup",
+    sub: "CLUSTER heap vs random I/O",
+    color: "text-orange-400",
+    border: "border-orange-500/25",
+    glow: "shadow-[0_0_12px_rgba(251,146,60,0.15)]",
+    bg: "bg-orange-500/8",
+  },
+  {
+    value: "3×+",
+    label: "Buffer Cache Hit",
+    sub: "Hot page cache vs cold disk scan",
+    color: "text-cyan-400",
+    border: "border-cyan-500/25",
+    glow: "shadow-[0_0_12px_rgba(34,211,238,0.15)]",
+    bg: "bg-cyan-500/8",
+  },
+  {
+    value: "4.5×",
+    label: "Partition Skew",
+    sub: "90% West skew vs uniform dist.",
+    color: "text-red-400",
+    border: "border-red-500/25",
+    glow: "shadow-[0_0_12px_rgba(248,113,113,0.15)]",
+    bg: "bg-red-500/8",
+  },
+  {
+    value: "500K",
+    label: "Rows Silently Lost",
+    sub: "Parquet vs Delta Lake OCC isolation",
+    color: "text-purple-400",
+    border: "border-purple-500/25",
+    glow: "shadow-[0_0_12px_rgba(192,132,252,0.15)]",
+    bg: "bg-purple-500/8",
+  },
+];
+
+function StatsGrid({ validatedCount, total }: { validatedCount: number; total: number }) {
+  return (
+    <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      {/* Validated count — prominent first card */}
+      <div className="col-span-2 md:col-span-2 lg:col-span-1 rounded-xl border border-primary/40 bg-primary/10 shadow-[0_0_20px_rgba(0,255,255,0.12)] p-4 flex flex-col justify-between">
+        <span className="text-[10px] font-mono uppercase tracking-widest text-primary/70 mb-1">Validated</span>
+        <span className="text-4xl font-bold font-mono text-primary leading-none">{validatedCount}<span className="text-xl text-primary/50">/{total}</span></span>
+        <span className="text-[10px] text-muted-foreground mt-2 leading-tight">CMU 15-721 concepts<br/>empirically confirmed</span>
+      </div>
+      {HEADLINE_STATS.map((s) => (
+        <div key={s.label} className={`rounded-xl border ${s.border} ${s.bg} ${s.glow} p-4 flex flex-col justify-between`}>
+          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/70 mb-1">{s.label}</span>
+          <span className={`text-3xl font-bold font-mono leading-none ${s.color}`}>{s.value}</span>
+          <span className="text-[10px] text-muted-foreground mt-2 leading-tight">{s.sub}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 function ValidationPanel({ validation }: { validation: ValidationData }) {
   if (!validation) return null;
@@ -1551,11 +1628,12 @@ function UseCaseSection({
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const [activeLogStream, setActiveLogStream] = useState<UseCaseType | null>(null);
+  const [runAllQueue, setRunAllQueue] = useState<UseCaseType[]>([]);
+  const [runAllProgress, setRunAllProgress] = useState(0);
 
   const { data: status } = useGetBenchmarkStatus({
     query: {
       queryKey: getGetBenchmarkStatusQueryKey(),
-      // Poll every 3s while a run is active or an SSE stream is open
       refetchInterval: (query) =>
         (query.state.data?.running || activeLogStream !== null) ? 3000 : false,
     }
@@ -1567,19 +1645,33 @@ export default function Dashboard() {
     runBenchmark.mutate({ useCase }, {
       onSuccess: () => {
         setActiveLogStream(useCase);
-        // Immediately refresh status so running=true and system chips update
         queryClient.invalidateQueries({ queryKey: getGetBenchmarkStatusQueryKey() });
       }
     });
   };
 
+  const handleRunAll = () => {
+    const allIds = USE_CASES.map(uc => uc.id);
+    setRunAllProgress(0);
+    const [first, ...rest] = allIds;
+    setRunAllQueue(rest);
+    handleRun(first);
+  };
+
   const handleLogComplete = () => {
     if (activeLogStream) {
-      // Refresh status first so completedUseCases updates and enables the results query
       queryClient.invalidateQueries({ queryKey: getGetBenchmarkStatusQueryKey() });
-      // Then refetch results for this specific use case
       queryClient.invalidateQueries({ queryKey: getGetBenchmarkResultsQueryKey(activeLogStream) });
       setActiveLogStream(null);
+
+      if (runAllQueue.length > 0) {
+        const [next, ...rest] = runAllQueue;
+        setRunAllProgress(p => p + 1);
+        setRunAllQueue(rest);
+        setTimeout(() => handleRun(next), 600);
+      } else if (runAllProgress > 0) {
+        setRunAllProgress(0);
+      }
     }
   };
 
@@ -1606,6 +1698,27 @@ export default function Dashboard() {
           </div>
           
           <div className="flex items-center gap-4">
+            {/* Run All button */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={status?.running || runAllQueue.length > 0}
+              onClick={handleRunAll}
+              className="hidden sm:flex items-center gap-2 border-primary/40 text-primary hover:bg-primary/10 hover:text-primary font-mono text-xs uppercase tracking-wider shadow-[0_0_8px_rgba(0,255,255,0.1)]"
+            >
+              {runAllQueue.length > 0 ? (
+                <>
+                  <Activity className="w-3.5 h-3.5 animate-pulse" />
+                  {USE_CASES.length - runAllQueue.length}/{USE_CASES.length}
+                </>
+              ) : (
+                <>
+                  <Rocket className="w-3.5 h-3.5" />
+                  Run All
+                </>
+              )}
+            </Button>
+
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider mr-2">Systems:</span>
               {(["postgres", "duckdb", "spark"] as const).map(sys => {
@@ -1643,6 +1756,12 @@ export default function Dashboard() {
             Execute workloads against available engines to generate empirical proofs mapped directly to lecture concepts.
           </p>
         </section>
+
+        {/* Headline Stats */}
+        <StatsGrid
+          validatedCount={status?.completedUseCases?.length ?? 0}
+          total={USE_CASES.length}
+        />
 
         {/* Live Logs */}
         {activeLogStream && (
