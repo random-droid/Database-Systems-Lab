@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, execSync, type ChildProcess } from "child_process";
 import fs from "fs";
+import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
@@ -73,32 +74,53 @@ function getCompletedUseCases(): string[] {
   }
 }
 
-function getAvailableSystems(): string[] {
-  const systems: string[] = [];
+// ------------------------------------------------------------------
+// System availability — cached async probe
+// ------------------------------------------------------------------
 
-  // DuckDB is always available (no server needed)
-  systems.push("duckdb");
+let systemsCache: string[] | null = null;
+let systemsCacheTime = 0;
+const SYSTEMS_CACHE_TTL_MS = 60_000; // re-probe at most once per minute
 
-  // Postgres: try env vars
-  if (
-    process.env.POSTGRES_HOST ||
-    process.env.DATABASE_URL?.includes("postgres")
-  ) {
-    systems.push("postgres");
-  } else {
-    // Try default localhost connection hint
+function tcpPing(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    socket.setTimeout(timeoutMs);
+    socket.on("connect", () => { socket.destroy(); resolve(true); });
+    socket.on("error", () => resolve(false));
+    socket.on("timeout", () => { socket.destroy(); resolve(false); });
+  });
+}
+
+async function probeSystems(): Promise<string[]> {
+  const systems: string[] = ["duckdb"]; // always available — no server needed
+
+  // Postgres: real TCP check on configured host/port
+  const pgHost = process.env.POSTGRES_HOST ?? "localhost";
+  const pgPort = parseInt(process.env.POSTGRES_PORT ?? "5432", 10);
+  if (await tcpPing(pgHost, pgPort, 2000)) {
     systems.push("postgres");
   }
 
-  // Spark: check if PySpark is importable
+  // Spark: verify PySpark is actually importable in the Python runtime
   try {
-    const which = fs.existsSync("/usr/bin/python3") || fs.existsSync("/usr/local/bin/python3");
-    if (which) systems.push("spark");
+    execSync("python3 -c 'import pyspark'", { timeout: 5000, stdio: "ignore" });
+    systems.push("spark");
   } catch {
-    // not available
+    // PySpark not installed or broken
   }
 
   return systems;
+}
+
+async function getAvailableSystems(): Promise<string[]> {
+  const now = Date.now();
+  if (systemsCache && now - systemsCacheTime < SYSTEMS_CACHE_TTL_MS) {
+    return systemsCache;
+  }
+  systemsCache = await probeSystems();
+  systemsCacheTime = now;
+  return systemsCache;
 }
 
 // ------------------------------------------------------------------
@@ -110,7 +132,7 @@ router.get("/benchmarks/status", async (_req, res): Promise<void> => {
     running: runningUseCase !== null,
     runningUseCase: runningUseCase,
     completedUseCases: getCompletedUseCases(),
-    availableSystems: getAvailableSystems(),
+    availableSystems: await getAvailableSystems(),
   });
   res.json(data);
 });

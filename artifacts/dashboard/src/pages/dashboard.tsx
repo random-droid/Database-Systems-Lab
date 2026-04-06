@@ -114,7 +114,7 @@ const TRACEABILITY_MATRIX = [
   { benchmark: "Clustered heap", lecture: "Lecture 04", concept: "Storage Models", proof: "cluster_speedup > 3x" },
 ];
 
-function ValidationPanel({ validation }: { validation: any }) {
+function ValidationPanel({ validation }: { validation: ValidationData }) {
   if (!validation) return null;
   return (
     <div className="flex flex-col gap-4 p-4 bg-muted/30 rounded-md border border-border h-full">
