@@ -19,7 +19,17 @@ const router: IRouter = Router();
 // State (in-process, single-worker)
 // ------------------------------------------------------------------
 
-type UseCase = "dashboards" | "complex_joins" | "variant_test" | "clustering" | "acid_integrity" | "vectorized_execution";
+type UseCase =
+  | "dashboards"
+  | "complex_joins"
+  | "variant_test"
+  | "clustering"
+  | "acid_integrity"
+  | "vectorized_execution"
+  | "compression"
+  | "window_functions"
+  | "query_optimization"
+  | "skew_handling";
 
 const USE_CASE_FILES: Record<UseCase, string> = {
   dashboards: "use_case_1_dashboards.json",
@@ -28,6 +38,10 @@ const USE_CASE_FILES: Record<UseCase, string> = {
   clustering: "use_case_4_clustering.json",
   acid_integrity: "use_case_5_acid_integrity.json",
   vectorized_execution: "use_case_6_vectorized_execution.json",
+  compression: "use_case_7_compression.json",
+  window_functions: "use_case_8_window_functions.json",
+  query_optimization: "use_case_9_query_optimization.json",
+  skew_handling: "use_case_10_skew_handling.json",
 };
 
 const USE_CASE_SCRIPTS: Record<UseCase, string> = {
@@ -37,6 +51,10 @@ const USE_CASE_SCRIPTS: Record<UseCase, string> = {
   clustering: "benchmarks/benchmark_clustering.py",
   acid_integrity: "benchmarks/benchmark_acid_integrity.py",
   vectorized_execution: "benchmarks/benchmark_vectorized_execution.py",
+  compression: "benchmarks/benchmark_compression.py",
+  window_functions: "benchmarks/benchmark_window_functions.py",
+  query_optimization: "benchmarks/benchmark_query_optimization.py",
+  skew_handling: "benchmarks/benchmark_skew_handling.py",
 };
 
 // Resolve benchmark directory relative to the compiled file location.

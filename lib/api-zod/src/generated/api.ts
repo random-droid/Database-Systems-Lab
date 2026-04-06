@@ -47,6 +47,10 @@ export const GetBenchmarkResultsParams = zod.object({
     "clustering",
     "acid_integrity",
     "vectorized_execution",
+    "compression",
+    "window_functions",
+    "query_optimization",
+    "skew_handling",
   ]),
 });
 
@@ -68,6 +72,10 @@ export const RunBenchmarkParams = zod.object({
     "clustering",
     "acid_integrity",
     "vectorized_execution",
+    "compression",
+    "window_functions",
+    "query_optimization",
+    "skew_handling",
   ]),
 });
 

@@ -1,0 +1,62 @@
+{
+  "use_case": 9,
+  "benchmark": "query_optimization",
+  "fact_rows": 10000000,
+  "dim_rows": 500000,
+  "scenarios": {
+    "no_filter": {
+      "label": "A: No filter (full scan)",
+      "description": "Full 10M-row scan + 500K hash build \u2014 optimizer sees no filter",
+      "execution_time_ms": 120.5,
+      "result_rows": 20,
+      "join_operators_detected": [
+        "HASH_JOIN"
+      ],
+      "plan_excerpt": "EXPLAIN ANALYZE          SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total         FROM orders o         JOIN products p ON o.product_id = p.product_id         GROUP BY p.category         ORDER BY total DESC     \n\u2502        Aggregates:        \u2502\n\u2502         HASH_JOIN         \u2502\n\u2502      Join Type:"
+    },
+    "single_predicate": {
+      "label": "B: Region filter (~20% selectivity)",
+      "description": "WHERE region='East' prunes ~80% rows before hash join",
+      "execution_time_ms": 95.1,
+      "result_rows": 20,
+      "join_operators_detected": [
+        "HASH_JOIN"
+      ],
+      "plan_excerpt": "EXPLAIN ANALYZE          SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total         FROM orders o         JOIN products p ON o.product_id = p.product_id         WHERE o.region = 'East'         GROUP BY p.category         ORDER BY total DESC     \n\u2502        Aggregates:        \u2502\n\u2502         HASH_"
+    },
+    "double_predicate": {
+      "label": "C: Double predicate (~2% selectivity)",
+      "description": "WHERE region='East' AND revenue>90 prunes ~98% rows",
+      "execution_time_ms": 76.8,
+      "result_rows": 20,
+      "join_operators_detected": [
+        "HASH_JOIN"
+      ],
+      "plan_excerpt": "EXPLAIN ANALYZE          SELECT p.category, COUNT(*) AS cnt, SUM(o.revenue) AS total         FROM orders o         JOIN products p ON o.product_id = p.product_id         WHERE o.region = 'East'           AND o.revenue > 90.0         GROUP BY p.category         ORDER BY total DESC     \n\u2502        Aggre"
+    }
+  },
+  "comparison": {
+    "single_predicate_speedup": 1.27,
+    "double_predicate_speedup": 1.57,
+    "second_predicate_marginal_speedup": 1.24,
+    "optimizer_insight": "1 predicate \u2192 1.27x speedup (region prunes ~80% rows); 2 predicates \u2192 1.57x speedup (prunes ~98% rows); DuckDB optimizer pushes predicates below the join operator"
+  },
+  "validation": {
+    "lecture": "CMU 15-721 Lectures 07-08: Query Optimization, Cost-Based Optimization",
+    "concept": "Predicate pushdown + HASH_JOIN plan selection based on table statistics",
+    "proof": "No filter: 120ms (baseline); 1 predicate: 95ms (1.27x speedup, ~20% selectivity); 2 predicates: 77ms (1.57x speedup, ~2% selectivity); Join operator: ['HASH_JOIN'] in all scenarios",
+    "validates": "L07-08 claim: optimizer pushes predicates below join operators to prune rows before the hash build phase; selectivity \u00d7 row_count = estimated output cardinality used for plan costing",
+    "confirmed": true,
+    "no_filter_ms": 120.5,
+    "single_predicate_ms": 95.1,
+    "double_predicate_ms": 76.8,
+    "single_predicate_speedup": 1.27,
+    "double_predicate_speedup": 1.57,
+    "join_operators": [
+      "HASH_JOIN"
+    ],
+    "interpretation": "Adding a region filter (20% selectivity) prunes 80% of the 10M-row fact table before the hash join, yielding 1.27x speedup. A second predicate (revenue > 90) drops selectivity to ~2%, giving 1.57x total speedup. The optimizer detects ['HASH_JOIN'] as the correct plan for an equi-join \u2014 it never falls back to nested-loop. L07-08 insight: 'push predicates as deep as possible before build/probe phases.'"
+  },
+  "run_timestamp": "2026-04-06T22:05:46.701072",
+  "maps_to": "CMU 15-721 Lectures 07-08: Query Optimization, Cost-Based Optimization"
+}

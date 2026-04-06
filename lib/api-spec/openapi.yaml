@@ -60,6 +60,10 @@ paths:
               - clustering
               - acid_integrity
               - vectorized_execution
+              - compression
+              - window_functions
+              - query_optimization
+              - skew_handling
       responses:
         "200":
           description: Benchmark results
@@ -93,6 +97,10 @@ paths:
               - clustering
               - acid_integrity
               - vectorized_execution
+              - compression
+              - window_functions
+              - query_optimization
+              - skew_handling
       responses:
         "200":
           description: Benchmark started

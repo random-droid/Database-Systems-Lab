@@ -1,0 +1,60 @@
+{
+  "use_case": 7,
+  "benchmark": "compression_effectiveness",
+  "row_count": 10000000,
+  "formats": {
+    "csv": {
+      "format": "csv",
+      "options": "FORMAT CSV, HEADER true",
+      "file_path": "/tmp/compression_benchmark_3_45mdc9/orders.csv",
+      "size_bytes": 626768340,
+      "size_mb": 597.73,
+      "write_time_ms": 2059.0,
+      "scan_time_ms": 932.7,
+      "rows_per_second": 10721777
+    },
+    "parquet_snappy": {
+      "format": "parquet",
+      "options": "FORMAT PARQUET, CODEC SNAPPY",
+      "file_path": "/tmp/compression_benchmark_3_45mdc9/orders.parquet",
+      "size_bytes": 179912307,
+      "size_mb": 171.58,
+      "write_time_ms": 857.7,
+      "scan_time_ms": 128.8,
+      "rows_per_second": 77631272
+    },
+    "parquet_zstd": {
+      "format": "parquet",
+      "options": "FORMAT PARQUET, CODEC ZSTD",
+      "file_path": "/tmp/compression_benchmark_3_45mdc9/orders.parquet",
+      "size_bytes": 94048051,
+      "size_mb": 89.69,
+      "write_time_ms": 1249.9,
+      "scan_time_ms": 154.8,
+      "rows_per_second": 64589995
+    }
+  },
+  "comparison": {
+    "csv_vs_parquet_snappy": {
+      "size_ratio": 3.48,
+      "scan_speedup": 7.24
+    },
+    "csv_vs_parquet_zstd": {
+      "size_ratio": 6.66,
+      "scan_speedup": 6.03
+    }
+  },
+  "validation": {
+    "lecture": "CMU 15-721 Lecture 03: Storage Models & Compression",
+    "concept": "Columnar Parquet encoding (dictionary, RLE, bit-packing) vs row CSV",
+    "proof": "CSV=597.7MB vs Parquet/Snappy=171.6MB (3.48x smaller); Parquet/Zstd=89.7MB (6.66x smaller); Scan speedup=7.24x (less I/O beats decompression overhead)",
+    "validates": "Article claim: columnar storage encodes repetitive string columns (region, category) with dictionary encoding achieving high compression; smaller file = fewer disk reads = faster scans",
+    "confirmed": true,
+    "size_ratio_snappy": 3.48,
+    "size_ratio_zstd": 6.66,
+    "scan_speedup_snappy": 7.24,
+    "interpretation": "Parquet (Snappy) is 3.48x smaller than CSV because columnar layout groups identical values (region has only 5 distinct values across 5977M rows), enabling dictionary encoding and RLE. Scanning Parquet is 7.24x faster because fewer bytes cross the I/O bus \u2014 decompression CPU cost is negligible compared to disk/memory bandwidth savings. This is the core L03 insight: 'access patterns should match the storage layout.'"
+  },
+  "run_timestamp": "2026-04-06T22:05:31.393672",
+  "maps_to": "CMU 15-721 Lecture 03: Storage Models (columnar compression)"
+}

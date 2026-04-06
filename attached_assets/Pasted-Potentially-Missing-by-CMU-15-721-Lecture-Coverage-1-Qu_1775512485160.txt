@@ -1,0 +1,87 @@
+Potentially Missing (by CMU 15-721 Lecture Coverage):
+1. Query Optimization / Cost-Based Optimization (L07-08) ⭐⭐⭐
+What it would show:
+
+Catalyst optimizer in Spark vs simple optimization
+Statistics-based query plan selection
+Cardinality estimation impact
+
+The Test:
+sql-- Same query, different data distributions
+-- Does optimizer choose broadcast vs shuffle join?
+SELECT * FROM large_table 
+JOIN small_table ON id
+Smoking Gun:
+
+Spark EXPLAIN shows "BroadcastHashJoin" for small table
+Switches to "SortMergeJoin" when table grows
+Cost-based decision validated
+
+Value: Shows "smart" vs "dumb" systems
+Effort: Medium (requires EXPLAIN parsing)
+CMU 15-721: Lectures 07-08 (Query Optimization)
+
+2. Compression Effectiveness (L03) ⭐⭐
+What it would show:
+
+Storage savings: CSV → Parquet (dictionary, RLE, bit-packing)
+Scan speed trade-off: compressed data faster due to less I/O
+Compression ratio by column type
+
+The Test:
+CSV:     5GB raw
+Parquet: 500MB compressed (10x savings)
+Query:   Compressed scans faster (less disk I/O)
+Smoking Gun:
+
+10x storage savings
+Scan time improves despite decompression overhead
+Dictionary encoding for low-cardinality columns
+
+Value: Shows "why columnar is efficient"
+Effort: Low (data already exists)
+CMU 15-721: Lecture 03 (Storage Models)
+
+3. Skew Handling / Adaptive Query Execution (L09) ⭐⭐⭐
+What it would show:
+
+Data skew in joins (one key has 90% of rows)
+Spark AQE detects and adapts
+Broadcast vs shuffle decision changes mid-query
+
+The Test:
+Skewed dataset:
+- Region 'West': 45M rows (90%)
+- Other regions: 5M rows (10%)
+
+Without AQE: Shuffle hangs on West partition
+With AQE:    Detects skew, switches strategy
+Smoking Gun:
+
+Without AQE: One executor does 90% of work
+With AQE: Workload rebalanced, 5-10x faster
+Query plan changes mid-execution
+
+Value: Shows "real-world problem solving"
+Effort: Medium (need skewed dataset)
+CMU 15-721: Lecture 09 (Join Algorithms - Skew)
+
+4. Window Functions / Analytical Patterns (L11) ⭐
+What it would show:
+
+LAG, LEAD, ROW_NUMBER performance
+Execution model differences (Postgres vs DuckDB vs Spark)
+
+The Test:
+sqlSELECT customer_id,
+       revenue,
+       LAG(revenue) OVER (PARTITION BY region ORDER BY date) as prev_revenue
+FROM orders
+Smoking Gun:
+
+Postgres: Slow (tuple-at-a-time)
+DuckDB: Fast (vectorized window execution)
+
+Value: Common analytical pattern
+Effort: Low
+CMU 15-721: Lecture 11 (Advanced Operators)

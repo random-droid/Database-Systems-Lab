@@ -196,7 +196,11 @@ export const getGetBenchmarkResultsUrl = (
     | "variant_test"
     | "clustering"
     | "acid_integrity"
-    | "vectorized_execution",
+    | "vectorized_execution"
+    | "compression"
+    | "window_functions"
+    | "query_optimization"
+    | "skew_handling",
 ) => {
   return `/api/benchmarks/results/${useCase}`;
 };
@@ -208,7 +212,11 @@ export const getBenchmarkResults = async (
     | "variant_test"
     | "clustering"
     | "acid_integrity"
-    | "vectorized_execution",
+    | "vectorized_execution"
+    | "compression"
+    | "window_functions"
+    | "query_optimization"
+    | "skew_handling",
   options?: RequestInit,
 ): Promise<BenchmarkResults> => {
   return customFetch<BenchmarkResults>(getGetBenchmarkResultsUrl(useCase), {
@@ -224,7 +232,11 @@ export const getGetBenchmarkResultsQueryKey = (
     | "variant_test"
     | "clustering"
     | "acid_integrity"
-    | "vectorized_execution",
+    | "vectorized_execution"
+    | "compression"
+    | "window_functions"
+    | "query_optimization"
+    | "skew_handling",
 ) => {
   return [`/api/benchmarks/results/${useCase}`] as const;
 };
@@ -239,7 +251,11 @@ export const getGetBenchmarkResultsQueryOptions = <
     | "variant_test"
     | "clustering"
     | "acid_integrity"
-    | "vectorized_execution",
+    | "vectorized_execution"
+    | "compression"
+    | "window_functions"
+    | "query_optimization"
+    | "skew_handling",
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getBenchmarkResults>>,
@@ -290,7 +306,11 @@ export function useGetBenchmarkResults<
     | "variant_test"
     | "clustering"
     | "acid_integrity"
-    | "vectorized_execution",
+    | "vectorized_execution"
+    | "compression"
+    | "window_functions"
+    | "query_optimization"
+    | "skew_handling",
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getBenchmarkResults>>,
@@ -320,7 +340,11 @@ export const getRunBenchmarkUrl = (
     | "variant_test"
     | "clustering"
     | "acid_integrity"
-    | "vectorized_execution",
+    | "vectorized_execution"
+    | "compression"
+    | "window_functions"
+    | "query_optimization"
+    | "skew_handling",
 ) => {
   return `/api/benchmarks/run/${useCase}`;
 };
@@ -332,7 +356,11 @@ export const runBenchmark = async (
     | "variant_test"
     | "clustering"
     | "acid_integrity"
-    | "vectorized_execution",
+    | "vectorized_execution"
+    | "compression"
+    | "window_functions"
+    | "query_optimization"
+    | "skew_handling",
   options?: RequestInit,
 ): Promise<RunBenchmarkResponse> => {
   return customFetch<RunBenchmarkResponse>(getRunBenchmarkUrl(useCase), {
@@ -355,7 +383,11 @@ export const getRunBenchmarkMutationOptions = <
         | "variant_test"
         | "clustering"
         | "acid_integrity"
-        | "vectorized_execution";
+        | "vectorized_execution"
+        | "compression"
+        | "window_functions"
+        | "query_optimization"
+        | "skew_handling";
     },
     TContext
   >;
@@ -370,7 +402,11 @@ export const getRunBenchmarkMutationOptions = <
       | "variant_test"
       | "clustering"
       | "acid_integrity"
-      | "vectorized_execution";
+      | "vectorized_execution"
+      | "compression"
+      | "window_functions"
+      | "query_optimization"
+      | "skew_handling";
   },
   TContext
 > => {
@@ -392,7 +428,11 @@ export const getRunBenchmarkMutationOptions = <
         | "variant_test"
         | "clustering"
         | "acid_integrity"
-        | "vectorized_execution";
+        | "vectorized_execution"
+        | "compression"
+        | "window_functions"
+        | "query_optimization"
+        | "skew_handling";
     }
   > = (props) => {
     const { useCase } = props ?? {};
@@ -426,7 +466,11 @@ export const useRunBenchmark = <
         | "variant_test"
         | "clustering"
         | "acid_integrity"
-        | "vectorized_execution";
+        | "vectorized_execution"
+        | "compression"
+        | "window_functions"
+        | "query_optimization"
+        | "skew_handling";
     },
     TContext
   >;
@@ -441,7 +485,11 @@ export const useRunBenchmark = <
       | "variant_test"
       | "clustering"
       | "acid_integrity"
-      | "vectorized_execution";
+      | "vectorized_execution"
+      | "compression"
+      | "window_functions"
+      | "query_optimization"
+      | "skew_handling";
   },
   TContext
 > => {

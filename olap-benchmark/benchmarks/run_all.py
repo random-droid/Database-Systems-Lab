@@ -98,6 +98,34 @@ def main():
         "run_vectorized_benchmark",
     )
 
+    # Use Case 7: Compression Effectiveness (L03)
+    suite_results["use_case_7_compression"] = run_use_case(
+        "Use Case 7: Compression Effectiveness (CSV vs Parquet Snappy vs Parquet Zstd)",
+        "benchmarks.benchmark_compression",
+        "run_compression_benchmark",
+    )
+
+    # Use Case 8: Window Functions / Analytical Patterns (L11)
+    suite_results["use_case_8_window_functions"] = run_use_case(
+        "Use Case 8: Window Functions (DuckDB vectorized vs Pandas groupby vs Postgres)",
+        "benchmarks.benchmark_window_functions",
+        "run_window_functions_benchmark",
+    )
+
+    # Use Case 9: Query Optimization / Cost-Based Optimization (L07-08)
+    suite_results["use_case_9_query_optimization"] = run_use_case(
+        "Use Case 9: Query Optimization (predicate pushdown + HASH_JOIN plan selection)",
+        "benchmarks.benchmark_query_optimization",
+        "run_query_optimization_benchmark",
+    )
+
+    # Use Case 10: Skew Handling / Adaptive Query Execution (L09)
+    suite_results["use_case_10_skew_handling"] = run_use_case(
+        "Use Case 10: Skew Handling (90% West partition vs uniform distribution)",
+        "benchmarks.benchmark_skew_handling",
+        "run_skew_handling_benchmark",
+    )
+
     total_elapsed = time.time() - overall_start
 
     # Build summary
@@ -110,13 +138,16 @@ def main():
         },
         "results": suite_results,
         "lecture_map": {
-            "Lecture 03: Data Models": "Use Case 3 — VARIANT shredding (PAX storage)",
+            "Lecture 03: Storage Models & Compression": "Use Cases 3+7 — VARIANT shredding (PAX); CSV vs Parquet compression",
             "Lecture 04: Storage Models": "Use Case 4 — Clustering / zone maps",
             "Lecture 05: Buffer Pool Management": "Use Cases 1+2 — Cold vs Hot scans",
             "Lecture 06: External Algorithms": "Use Case 2 — Spill-to-disk on 50M row join",
-            "Lecture 07: Vectorized Execution": "Use Case 1 — DuckDB vs Postgres throughput",
-            "Lecture 09: Join Algorithms": "Use Case 2 — Broadcast vs shuffle vs merge join",
+            "Lecture 07: Query Optimization": "Use Cases 1+9 — DuckDB throughput; predicate pushdown",
+            "Lecture 08: Cost-Based Optimization": "Use Case 9 — HASH_JOIN selection; selectivity estimation",
+            "Lecture 09: Join Algorithms (Skew)": "Use Cases 2+10 — Broadcast vs merge join; 90% partition skew",
             "Lectures 10-12: Vectorized Execution & SIMD": "Use Case 6 — DuckDB vs NumPy vs Python scalar",
+            "Lecture 11: Advanced Operators (Window)": "Use Case 8 — LAG/LEAD/ROW_NUMBER vectorized vs pandas",
+            "Lecture 14: Parallel Execution": "Use Case 10 — Straggler partitions under data skew",
             "Lectures 13-15: OCC / MVCC": "Use Case 5 — Delta OCC conflict detection + MVCC time travel",
         },
     }

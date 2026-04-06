@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2, ShieldAlert, Cpu } from "lucide-react";
+import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2, ShieldAlert, Cpu, Archive, TrendingUp, Filter, Scale } from "lucide-react";
 
 interface ValidationData {
   lecture: string;
@@ -141,7 +141,113 @@ interface VectorizedExecutionResult {
   validation: ValidationData;
 }
 
-type UseCaseType = "dashboards" | "complex_joins" | "variant_test" | "clustering" | "acid_integrity" | "vectorized_execution";
+// ── UC7: Compression ──────────────────────────────────────────────────────
+interface CompressionFormatResult {
+  format: string;
+  options: string;
+  size_bytes: number;
+  size_mb: number;
+  write_time_ms: number;
+  scan_time_ms: number;
+  rows_per_second: number;
+}
+interface CompressionResult {
+  row_count: number;
+  formats: {
+    csv: CompressionFormatResult;
+    parquet_snappy: CompressionFormatResult;
+    parquet_zstd: CompressionFormatResult;
+  };
+  comparison: {
+    csv_vs_parquet_snappy: { size_ratio: number; scan_speedup: number };
+    csv_vs_parquet_zstd: { size_ratio: number; scan_speedup: number };
+  };
+  validation: ValidationData;
+}
+
+// ── UC8: Window Functions ─────────────────────────────────────────────────
+interface WindowSystemResult {
+  available: boolean;
+  execution_time_ms?: number;
+  rows_processed?: number;
+  rows_per_second?: number;
+  window_ops?: string[];
+  execution_model?: string;
+  note?: string;
+  error?: string;
+}
+interface WindowFunctionsResult {
+  row_count: number;
+  query: string;
+  systems: {
+    duckdb: WindowSystemResult;
+    pandas: WindowSystemResult;
+    postgres: WindowSystemResult;
+  };
+  speedup: {
+    duckdb_vs_pandas?: number;
+    duckdb_vs_postgres?: number;
+  };
+  validation: ValidationData;
+}
+
+// ── UC9: Query Optimization ───────────────────────────────────────────────
+interface QueryScenario {
+  label: string;
+  description?: string;
+  execution_time_ms: number;
+  result_rows: number;
+  join_operators_detected: string[];
+  plan_excerpt?: string;
+}
+interface QueryOptimizationResult {
+  fact_rows: number;
+  dim_rows?: number;
+  scenarios: {
+    no_filter: QueryScenario;
+    single_predicate: QueryScenario;
+    double_predicate: QueryScenario;
+  };
+  comparison: {
+    single_predicate_speedup: number;
+    double_predicate_speedup: number;
+    second_predicate_marginal_speedup?: number;
+    optimizer_insight: string;
+  };
+  validation: ValidationData;
+}
+
+// ── UC10: Skew Handling ───────────────────────────────────────────────────
+interface SkewScenario {
+  label: string;
+  execution_time_ms: number;
+  groups: number;
+}
+interface SkewAggResult { uniform: SkewScenario; skewed: SkewScenario; slowdown: number }
+interface SkewHandlingResult {
+  row_count: number;
+  skew_pct: number;
+  partition_distribution: {
+    uniform: Record<string, number>;
+    skewed: Record<string, { count: number; pct: number }>;
+  };
+  scenarios: {
+    simple_aggregation: SkewAggResult;
+    complex_aggregation: SkewAggResult;
+    heavy_aggregation: SkewAggResult;
+  };
+  comparison: {
+    simple_agg_skew_slowdown: number;
+    complex_agg_skew_slowdown: number;
+    heavy_agg_skew_slowdown: number;
+    partition_imbalance_factor: number;
+    west_partition_pct: number;
+    expected_partition_pct: number;
+  };
+  validation: ValidationData;
+}
+
+type UseCaseType = "dashboards" | "complex_joins" | "variant_test" | "clustering" | "acid_integrity" | "vectorized_execution" | "compression" | "window_functions" | "query_optimization" | "skew_handling";
 
 const USE_CASES: { id: UseCaseType; title: string; description: string; lecture: string; icon: React.ReactNode }[] = [
   {
@@ -185,6 +291,34 @@ const USE_CASES: { id: UseCaseType; title: string; description: string; lecture:
     description: "Compares DuckDB (1024-tuple SIMD batches) vs NumPy columnar vs Python row-at-a-time Volcano model on a compute-intensive arithmetic aggregation.",
     lecture: "Lectures 10–12: Vectorized Execution",
     icon: <Cpu className="w-5 h-5" />
+  },
+  {
+    id: "compression",
+    title: "Compression Effectiveness",
+    description: "Measures CSV vs Parquet (Snappy/Zstd) file sizes and scan speeds on 10M rows. Demonstrates dictionary encoding, RLE, and bit-packing on low-cardinality columns.",
+    lecture: "Lecture 03: Storage Models & Compression",
+    icon: <Archive className="w-5 h-5" />
+  },
+  {
+    id: "window_functions",
+    title: "Window Functions / Analytical Patterns",
+    description: "Benchmarks LAG, LEAD, ROW_NUMBER, RANK, SUM OVER, and AVG OVER on DuckDB (vectorized) vs Python pandas (groupby + merge) vs Postgres (Volcano iterator).",
+    lecture: "Lecture 11: Advanced Operators (Window Functions)",
+    icon: <TrendingUp className="w-5 h-5" />
+  },
+  {
+    id: "query_optimization",
+    title: "Query Optimization / Cost-Based Optimization",
+    description: "Shows how DuckDB's optimizer uses predicate pushdown to prune rows before the hash join. Adds 1 and 2 predicates to the same join query and measures speedup.",
+    lecture: "Lectures 07–08: Query Optimization",
+    icon: <Filter className="w-5 h-5" />
+  },
+  {
+    id: "skew_handling",
+    title: "Skew Handling / Partition Imbalance",
+    description: "Creates a 90% West-skewed dataset vs uniform distribution. Measures aggregation slowdown and shows partition imbalance factor (4.5× more rows in West bucket).",
+    lecture: "Lecture 09: Join Algorithms (Skew) + Lecture 14",
+    icon: <Scale className="w-5 h-5" />
   }
 ];
 
@@ -197,6 +331,10 @@ const TRACEABILITY_MATRIX = [
   { benchmark: "DuckDB/Spark complex join", lecture: "Lecture 09", concept: "Join Algorithms", proof: "hash join in-memory vs broadcast shuffle vs merge join" },
   { benchmark: "Delta Lake OCC vs Parquet", lecture: "Lectures 13–15", concept: "OCC / MVCC / Lost Update Prevention", proof: "ConcurrentAppendException raised; Parquet silently lost 500K rows" },
   { benchmark: "DuckDB vs Python scalar loop", lecture: "Lectures 10–12", concept: "Vectorized Execution / SIMD", proof: "DuckDB 25x faster; 1024-tuple SIMD batches vs row-at-a-time Volcano model" },
+  { benchmark: "CSV vs Parquet (Snappy/Zstd)", lecture: "Lecture 03", concept: "Columnar Compression (dict, RLE, bit-packing)", proof: "Parquet 3-7x smaller; scan 5-7x faster despite decompression overhead" },
+  { benchmark: "DuckDB vs Pandas window ops", lecture: "Lecture 11", concept: "Advanced Operators (Window Functions)", proof: "DuckDB fuses sort+agg in single pass; pandas needs extra merge join" },
+  { benchmark: "Predicate pushdown (0, 1, 2 preds)", lecture: "Lectures 07–08", concept: "Cost-Based Optimization / Predicate Pushdown", proof: "2-predicate query 1.5x faster; HASH_JOIN selected in all scenarios" },
+  { benchmark: "90% West skew vs uniform", lecture: "Lecture 09", concept: "Join Skew / Partition Imbalance", proof: "4.5x partition imbalance; heavy agg (COUNT DISTINCT) slowdown visible" },
 ];
 
 function ValidationPanel({ validation }: { validation: ValidationData }) {
@@ -877,6 +1015,430 @@ function UseCaseSection({
     );
   };
 
+  // ────────────────────────────────────────────────────────────────────────
+  //  UC7: Compression Effectiveness
+  // ────────────────────────────────────────────────────────────────────────
+  const renderCompression = (data: CompressionResult) => {
+    const { formats, comparison } = data;
+    const { csv, parquet_snappy, parquet_zstd } = formats;
+
+    const sizeData = [
+      { name: "CSV", mb: csv.size_mb, fill: "#ef4444" },
+      { name: "Parquet\n(Snappy)", mb: parquet_snappy.size_mb, fill: "#6366f1" },
+      { name: "Parquet\n(Zstd)", mb: parquet_zstd.size_mb, fill: "#22c55e" },
+    ];
+    const scanData = [
+      { name: "CSV", ms: csv.scan_time_ms, fill: "#ef4444" },
+      { name: "Parquet\n(Snappy)", ms: parquet_snappy.scan_time_ms, fill: "#6366f1" },
+      { name: "Parquet\n(Zstd)", ms: parquet_zstd.scan_time_ms, fill: "#22c55e" },
+    ];
+    const snappyRatio = comparison.csv_vs_parquet_snappy.size_ratio;
+    const zstdRatio = comparison.csv_vs_parquet_zstd.size_ratio;
+    const scanSpeedupSnappy = comparison.csv_vs_parquet_snappy.scan_speedup;
+    const scanSpeedupZstd = comparison.csv_vs_parquet_zstd.scan_speedup;
+
+    return (
+      <div className="flex flex-col border-b border-border">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border/50">
+          {/* File Size */}
+          <div className="px-6 pt-5 pb-4 border-b lg:border-b-0 lg:border-r border-border/50">
+            <div className="flex items-center gap-2 mb-3">
+              <Archive className="w-4 h-4 text-muted-foreground" />
+              <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+                File Size <span className="text-primary">Comparison</span>
+              </h3>
+              <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+                {(data.row_count ?? 0).toLocaleString()} rows
+              </span>
+            </div>
+            <div className="h-44">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={sizeData} layout="vertical" margin={{ left: 20, right: 50, top: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                    tickFormatter={(v) => `${v}MB`} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 9 }} width={80} />
+                  <Tooltip contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
+                    formatter={(v: number) => [`${v.toFixed(1)} MB`, "size"]} />
+                  <Bar dataKey="mb" radius={[0, 4, 4, 0]} label={{ position: "right", fontSize: 9, fill: "hsl(var(--muted-foreground))", formatter: (v: number) => `${v.toFixed(0)}MB` }}>
+                    {sizeData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Scan Time */}
+          <div className="px-6 pt-5 pb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap className="w-4 h-4 text-muted-foreground" />
+              <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+                Scan Speed <span className="text-primary">Comparison</span>
+              </h3>
+            </div>
+            <div className="h-44">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={scanData} layout="vertical" margin={{ left: 20, right: 60, top: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                    tickFormatter={(v) => `${v}ms`} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 9 }} width={80} />
+                  <Tooltip contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
+                    formatter={(v: number) => [`${v.toFixed(1)}ms`, "scan time"]} />
+                  <Bar dataKey="ms" radius={[0, 4, 4, 0]} label={{ position: "right", fontSize: 9, fill: "hsl(var(--muted-foreground))", formatter: (v: number) => `${v.toFixed(0)}ms` }}>
+                    {scanData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Ratios + Format Details */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border/50">
+          <div className="px-6 py-4 border-b lg:border-b-0 lg:border-r border-border/50">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Compression Ratios</h4>
+            <div className="flex flex-col gap-2">
+              {[
+                { label: "Parquet Snappy vs CSV (size)", value: `${snappyRatio}×`, highlight: snappyRatio >= 2 },
+                { label: "Parquet Zstd vs CSV (size)", value: `${zstdRatio}×`, highlight: zstdRatio >= 3 },
+                { label: "Parquet Snappy scan speedup", value: `${scanSpeedupSnappy}×`, highlight: scanSpeedupSnappy >= 2 },
+                { label: "Parquet Zstd scan speedup", value: `${scanSpeedupZstd}×`, highlight: scanSpeedupZstd >= 2 },
+              ].map(({ label, value, highlight }) => (
+                <div key={label} className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">{label}</span>
+                  <Badge variant="outline" className={highlight
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 font-mono text-xs"
+                    : "bg-muted/30 text-muted-foreground font-mono text-xs"}>
+                    {value}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Format Details</h4>
+            <div className="flex flex-col gap-2 text-xs">
+              {[
+                { label: "CSV", f: csv, color: "text-red-400" },
+                { label: "Parquet (Snappy)", f: parquet_snappy, color: "text-indigo-400" },
+                { label: "Parquet (Zstd)", f: parquet_zstd, color: "text-green-400" },
+              ].map(({ label, f, color }) => (
+                <div key={label}>
+                  <span className={`font-semibold ${color}`}>{label}</span>
+                  <div className="text-muted-foreground font-mono text-[10px] mt-0.5 ml-2">
+                    {f.size_mb.toFixed(1)} MB · scan {f.scan_time_ms.toFixed(0)}ms · {f.rows_per_second.toLocaleString()} rows/sec
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="p-6 bg-muted/5"><ValidationPanel validation={data.validation} /></div>
+      </div>
+    );
+  };
+
+  // ────────────────────────────────────────────────────────────────────────
+  //  UC8: Window Functions
+  // ────────────────────────────────────────────────────────────────────────
+  const renderWindowFunctions = (data: WindowFunctionsResult) => {
+    const { systems, speedup } = data;
+    const duck = systems.duckdb;
+    const pandas = systems.pandas;
+    const pg = systems.postgres;
+
+    const chartData = [
+      duck.available && duck.execution_time_ms != null && { name: "DuckDB\n(vectorized)", ms: duck.execution_time_ms, fill: "#6366f1" },
+      pandas.available && pandas.execution_time_ms != null && { name: "Pandas\n(groupby)", ms: pandas.execution_time_ms, fill: "#f97316" },
+      pg.available && pg.execution_time_ms != null && { name: "Postgres\n(Volcano)", ms: pg.execution_time_ms, fill: "#ef4444" },
+    ].filter(Boolean) as { name: string; ms: number; fill: string }[];
+
+    return (
+      <div className="flex flex-col border-b border-border">
+        <div className="px-6 pt-5 pb-4 border-b border-border/50">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+              Window Execution Time <span className="text-primary">Comparison</span>
+            </h3>
+            <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+              {(data.row_count ?? 0).toLocaleString()} rows — LAG, LEAD, ROW_NUMBER, RANK, SUM/AVG OVER
+            </span>
+          </div>
+          {chartData.length > 0 ? (
+            <div className="h-44">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} layout="vertical" margin={{ left: 20, right: 60, top: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                    tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v}ms`} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 9 }} width={90} />
+                  <Tooltip contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
+                    formatter={(v: number) => [v >= 1000 ? `${(v / 1000).toFixed(2)}s` : `${v.toFixed(1)}ms`, "time"]} />
+                  <Bar dataKey="ms" radius={[0, 4, 4, 0]} label={{ position: "right", fontSize: 9, fill: "hsl(var(--muted-foreground))",
+                    formatter: (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v.toFixed(0)}ms` }}>
+                    {chartData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground italic py-4">No chart data — run benchmark to populate</p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border/50">
+          <div className="px-6 py-4 border-b lg:border-b-0 lg:border-r border-border/50">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Speedup Ratios</h4>
+            <div className="flex flex-col gap-2">
+              {[
+                speedup.duckdb_vs_pandas != null && { label: "DuckDB vs Pandas", value: speedup.duckdb_vs_pandas, highlight: true },
+                speedup.duckdb_vs_postgres != null && { label: "DuckDB vs Postgres", value: speedup.duckdb_vs_postgres, highlight: true },
+              ].filter(Boolean).map((e) => {
+                const entry = e as { label: string; value: number; highlight: boolean };
+                return (
+                  <div key={entry.label} className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{entry.label}</span>
+                    <Badge variant="outline" className={entry.highlight
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 font-mono text-xs"
+                      : "bg-muted/30 text-muted-foreground font-mono text-xs"}>
+                      {entry.value}×
+                    </Badge>
+                  </div>
+                );
+              })}
+              {!speedup.duckdb_vs_pandas && !speedup.duckdb_vs_postgres && (
+                <p className="text-xs text-muted-foreground italic">Only DuckDB available — pandas/Postgres not installed</p>
+              )}
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Execution Model</h4>
+            <div className="flex flex-col gap-2 text-xs">
+              {[
+                { label: "DuckDB", sys: duck, color: "text-indigo-400" },
+                { label: "Pandas", sys: pandas, color: "text-orange-400" },
+                { label: "Postgres", sys: pg, color: "text-red-400" },
+              ].map(({ label, sys, color }) => sys.available ? (
+                <div key={label}>
+                  <span className={`font-semibold ${color}`}>{label}</span>
+                  <div className="text-muted-foreground font-mono text-[10px] mt-0.5 ml-2">
+                    {sys.execution_model}
+                  </div>
+                  {sys.rows_per_second != null && (
+                    <div className="text-[10px] text-muted-foreground/60 ml-2">
+                      {sys.rows_per_second.toLocaleString()} rows/sec
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div key={label} className="text-muted-foreground/50 italic">{label}: not available</div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="p-6 bg-muted/5"><ValidationPanel validation={data.validation} /></div>
+      </div>
+    );
+  };
+
+  // ────────────────────────────────────────────────────────────────────────
+  //  UC9: Query Optimization
+  // ────────────────────────────────────────────────────────────────────────
+  const renderQueryOptimization = (data: QueryOptimizationResult) => {
+    const { scenarios, comparison } = data;
+    const { no_filter, single_predicate, double_predicate } = scenarios;
+
+    const scenarioData = [
+      { name: "No filter\n(full scan)", ms: no_filter.execution_time_ms, fill: "#ef4444", label: "0 predicates" },
+      { name: "Region filter\n(~20% rows)", ms: single_predicate.execution_time_ms, fill: "#f97316", label: "1 predicate" },
+      { name: "Region + Revenue\n(~2% rows)", ms: double_predicate.execution_time_ms, fill: "#22c55e", label: "2 predicates" },
+    ];
+
+    return (
+      <div className="flex flex-col border-b border-border">
+        <div className="px-6 pt-5 pb-4 border-b border-border/50">
+          <div className="flex items-center gap-2 mb-3">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+              Predicate Pushdown <span className="text-primary">Impact</span>
+            </h3>
+            <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+              {(data.fact_rows ?? 0).toLocaleString()} fact rows × {(data.dim_rows ?? 0).toLocaleString()} dim rows
+            </span>
+          </div>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={scenarioData} layout="vertical" margin={{ left: 20, right: 60, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                  tickFormatter={(v) => `${v}ms`} />
+                <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 9 }} width={100} />
+                <Tooltip contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
+                  formatter={(v: number) => [`${v.toFixed(1)}ms`, "time"]} />
+                <Bar dataKey="ms" radius={[0, 4, 4, 0]} label={{ position: "right", fontSize: 9, fill: "hsl(var(--muted-foreground))",
+                  formatter: (v: number) => `${v.toFixed(0)}ms` }}>
+                  {scenarioData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border/50">
+          <div className="px-6 py-4 border-b lg:border-b-0 lg:border-r border-border/50">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Speedup from Predicates</h4>
+            <div className="flex flex-col gap-2">
+              {[
+                { label: "1 predicate vs no filter", value: comparison.single_predicate_speedup, highlight: comparison.single_predicate_speedup >= 1.2 },
+                { label: "2 predicates vs no filter", value: comparison.double_predicate_speedup, highlight: comparison.double_predicate_speedup >= 1.5 },
+                comparison.second_predicate_marginal_speedup != null && { label: "2nd predicate marginal gain", value: comparison.second_predicate_marginal_speedup!, highlight: false },
+              ].filter(Boolean).map((e) => {
+                const entry = e as { label: string; value: number; highlight: boolean };
+                return (
+                  <div key={entry.label} className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{entry.label}</span>
+                    <Badge variant="outline" className={entry.highlight
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 font-mono text-xs"
+                      : "bg-muted/30 text-muted-foreground font-mono text-xs"}>
+                      {entry.value}×
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Optimizer Plan Details</h4>
+            <div className="flex flex-col gap-2 text-xs">
+              <div>
+                <span className="font-semibold text-red-400">No filter</span>
+                <div className="text-muted-foreground font-mono text-[10px] mt-0.5 ml-2">
+                  {no_filter.join_operators_detected.join(", ")} · {no_filter.execution_time_ms.toFixed(0)}ms · {no_filter.result_rows.toLocaleString()} output rows
+                </div>
+              </div>
+              <div>
+                <span className="font-semibold text-orange-400">1 predicate (region)</span>
+                <div className="text-muted-foreground font-mono text-[10px] mt-0.5 ml-2">
+                  {single_predicate.join_operators_detected.join(", ")} · {single_predicate.execution_time_ms.toFixed(0)}ms · ~20% selectivity
+                </div>
+              </div>
+              <div>
+                <span className="font-semibold text-green-400">2 predicates (region + revenue)</span>
+                <div className="text-muted-foreground font-mono text-[10px] mt-0.5 ml-2">
+                  {double_predicate.join_operators_detected.join(", ")} · {double_predicate.execution_time_ms.toFixed(0)}ms · ~2% selectivity
+                </div>
+              </div>
+              <div className="mt-1 text-[10px] text-muted-foreground/70 italic border-t border-border/30 pt-2">
+                {comparison.optimizer_insight}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 bg-muted/5"><ValidationPanel validation={data.validation} /></div>
+      </div>
+    );
+  };
+
+  // ────────────────────────────────────────────────────────────────────────
+  //  UC10: Skew Handling
+  // ────────────────────────────────────────────────────────────────────────
+  const renderSkewHandling = (data: SkewHandlingResult) => {
+    const { scenarios, comparison } = data;
+    const { simple_aggregation: sa, complex_aggregation: ca, heavy_aggregation: ha } = scenarios;
+
+    const aggData = [
+      { name: "Simple\n(SUM, COUNT)", uniform: sa.uniform.execution_time_ms, skewed: sa.skewed.execution_time_ms },
+      { name: "Complex\n(COUNT DISTINCT)", uniform: ca.uniform.execution_time_ms, skewed: ca.skewed.execution_time_ms },
+      { name: "Heavy\n(STDDEV, P95)", uniform: ha.uniform.execution_time_ms, skewed: ha.skewed.execution_time_ms },
+    ];
+
+    return (
+      <div className="flex flex-col border-b border-border">
+        <div className="px-6 pt-5 pb-4 border-b border-border/50">
+          <div className="flex items-center gap-2 mb-3">
+            <Scale className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+              Skew vs Uniform <span className="text-primary">Aggregation Time</span>
+            </h3>
+            <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+              {(data.row_count ?? 0).toLocaleString()} rows · West = {data.skew_pct}% of data
+            </span>
+          </div>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={aggData} margin={{ left: 10, right: 20, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 9 }} />
+                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                  tickFormatter={(v) => `${v}ms`} />
+                <Tooltip contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
+                  formatter={(v: number) => [`${v.toFixed(1)}ms`, ""]} />
+                <Bar dataKey="uniform" name="Uniform" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="skewed" name="Skewed (90% West)" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex gap-4 mt-1">
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-indigo-500 inline-block" /><span className="text-[10px] text-muted-foreground">Uniform distribution</span></div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-500 inline-block" /><span className="text-[10px] text-muted-foreground">Skewed (90% West)</span></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border/50">
+          <div className="px-6 py-4 border-b lg:border-b-0 lg:border-r border-border/50">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Skew Slowdown by Query Type</h4>
+            <div className="flex flex-col gap-2">
+              {[
+                { label: "Simple aggregation (SUM, COUNT)", value: comparison.simple_agg_skew_slowdown, highlight: comparison.simple_agg_skew_slowdown > 1.1 },
+                { label: "Complex aggregation (COUNT DISTINCT)", value: comparison.complex_agg_skew_slowdown, highlight: comparison.complex_agg_skew_slowdown > 1.1 },
+                { label: "Heavy aggregation (STDDEV, P95)", value: comparison.heavy_agg_skew_slowdown, highlight: comparison.heavy_agg_skew_slowdown > 1.2 },
+              ].map(({ label, value, highlight }) => (
+                <div key={label} className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">{label}</span>
+                  <Badge variant="outline" className={highlight
+                    ? "bg-red-500/10 text-red-400 border-red-500/30 font-mono text-xs"
+                    : "bg-muted/30 text-muted-foreground font-mono text-xs"}>
+                    {value}× slower
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            <h4 className="font-mono text-xs uppercase tracking-wider text-muted-foreground mb-3">Partition Imbalance</h4>
+            <div className="flex flex-col gap-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Imbalance factor (West vs expected)</span>
+                <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/30 font-mono text-xs">
+                  {comparison.partition_imbalance_factor}×
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">West partition size</span>
+                <Badge variant="outline" className="bg-muted/30 text-muted-foreground font-mono text-xs">
+                  {comparison.west_partition_pct}%
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Expected (uniform)</span>
+                <Badge variant="outline" className="bg-muted/30 text-muted-foreground font-mono text-xs">
+                  {comparison.expected_partition_pct}%
+                </Badge>
+              </div>
+              <div className="mt-2 text-[10px] text-muted-foreground/70 italic border-t border-border/30 pt-2">
+                Spark AQE detects this skew at runtime and splits the West partition.
+                DuckDB parallel executor absorbs some skew via partial aggregation.
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 bg-muted/5"><ValidationPanel validation={data.validation} /></div>
+      </div>
+    );
+  };
+
   const renderCardBody = () => {
     if (!results) return null;
 
@@ -896,6 +1458,30 @@ function UseCaseSection({
       const vData = results as unknown as VectorizedExecutionResult;
       if (!vData.validation) return null;
       return renderVectorizedExecution(vData);
+    }
+
+    if (useCase.id === "compression") {
+      const cData = results as unknown as CompressionResult;
+      if (!cData.validation) return null;
+      return renderCompression(cData);
+    }
+
+    if (useCase.id === "window_functions") {
+      const wData = results as unknown as WindowFunctionsResult;
+      if (!wData.validation) return null;
+      return renderWindowFunctions(wData);
+    }
+
+    if (useCase.id === "query_optimization") {
+      const qData = results as unknown as QueryOptimizationResult;
+      if (!qData.validation) return null;
+      return renderQueryOptimization(qData);
+    }
+
+    if (useCase.id === "skew_handling") {
+      const sData = results as unknown as SkewHandlingResult;
+      if (!sData.validation) return null;
+      return renderSkewHandling(sData);
     }
 
     const perSystemResults = results as Record<string, Record<string, unknown> | undefined>;
