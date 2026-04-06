@@ -1,0 +1,448 @@
+**Perfect! Let me help you integrate CMU 15-721 lecture context into your Replit UI.**
+
+---
+
+## **Where to Add Lecture Context (Priority Order):**
+
+### **1. Benchmark Result Cards (High Priority)** 🎯
+
+**Add a "Theory" section to each result panel:**
+
+```jsx
+// Current structure:
+<ResultCard>
+  <MetricsPanel>      // Left: Charts + numbers
+  <ValidationPanel>   // Right: Smoking gun
+</ResultCard>
+
+// Enhanced structure:
+<ResultCard>
+  <LectureContext>    // TOP: Theory primer (collapsible)
+  <MetricsPanel>      // Left: Charts + numbers
+  <ValidationPanel>   // Right: Proof
+</ResultCard>
+```
+
+**Example for Use Case 5 (ACID Integrity):**
+
+```jsx
+<LectureContext>
+  <LectureBadge>
+    📚 CMU 15-721 Lectures 13-15: Concurrency Control
+  </LectureBadge>
+  
+  <TheoryPrimer collapsed={!expanded}>
+    <h4>What You'll Learn:</h4>
+    <ul>
+      <li><strong>Lecture 13:</strong> Timestamp Ordering - How databases order concurrent transactions</li>
+      <li><strong>Lecture 14:</strong> Optimistic Concurrency Control (OCC) - Assume no conflicts, validate on commit</li>
+      <li><strong>Lecture 15:</strong> Multi-Version Concurrency Control (MVCC) - Snapshot isolation</li>
+    </ul>
+    
+    <KeyConcept>
+      <strong>The Core Problem:</strong> How do you prevent "Lost Updates" when 
+      multiple writers modify the same data simultaneously?
+    </KeyConcept>
+    
+    <Solutions>
+      <li>Pessimistic (Postgres): Lock before reading → blocks other writers</li>
+      <li>Optimistic (Delta Lake): Don't lock → validate on commit → throw exception if conflict</li>
+    </Solutions>
+  </TheoryPrimer>
+  
+  <ToggleButton onClick={() => setExpanded(!expanded)}>
+    {expanded ? "Hide Theory" : "Show Lecture Context"}
+  </ToggleButton>
+</LectureContext>
+```
+
+---
+
+### **2. Enhanced Validation Panel (Medium Priority)** 📖
+
+**Add lecture context directly in the validation box:**
+
+```jsx
+<ValidationPanel>
+  {/* Current smoking gun proof */}
+  <SmokingGun>
+    🎯 SMOKING GUN:
+    Parquet: 500,000 rows lost silently
+    Delta: ConcurrentAppendException
+  </SmokingGun>
+  
+  {/* NEW: Theory connection */}
+  <TheoryConnection>
+    <LectureIcon>📖</LectureIcon>
+    <strong>From Lecture 14:</strong>
+    <blockquote>
+      "In OCC, transactions proceed without locks. On commit, 
+      the system validates that no other transaction modified 
+      the same data. If conflict detected → abort."
+    </blockquote>
+    
+    <ProofMapping>
+      ✅ Delta's ConcurrentAppendException = OCC validation working
+      ❌ Parquet's silent overwrite = No concurrency control
+    </ProofMapping>
+  </TheoryConnection>
+  
+  {/* Link to lecture materials */}
+  <LearnMore>
+    <a href="https://15721.courses.cs.cmu.edu/spring2023/lectures.html#l13-timestampordering">
+      📺 Watch Lecture 14: Optimistic Concurrency Control
+    </a>
+  </LearnMore>
+</ValidationPanel>
+```
+
+---
+
+### **3. Traceability Matrix Enhancement (High Priority)** 🗺️
+
+**Make the matrix interactive with lecture context:**
+
+```jsx
+<TraceabilityMatrix>
+  <MatrixHeader>
+    📚 CMU 15-721: Theory → Practice Validation
+  </MatrixHeader>
+  
+  <MatrixTable>
+    <thead>
+      <tr>
+        <th>Lecture</th>
+        <th>Core Concept</th>
+        <th>Use Case</th>
+        <th>Smoking Gun</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <MatrixRow clickable onClick={() => scrollToUseCase(5)}>
+        <LectureCell>
+          <LectureNumber>L13-15</LectureNumber>
+          <LectureTitle>Concurrency Control</LectureTitle>
+          <LectureLink href="...">📺 Watch</LectureLink>
+        </LectureCell>
+        
+        <ConceptCell>
+          <ConceptName>OCC vs MVCC</ConceptName>
+          <ConceptPreview>
+            Optimistic: validate on commit
+            MVCC: snapshot isolation
+          </ConceptPreview>
+        </ConceptCell>
+        
+        <UseCaseCell>
+          <UseCaseName>ACID Integrity</UseCaseName>
+          <UseCaseIcon>🔒</UseCaseIcon>
+        </UseCaseCell>
+        
+        <ProofCell>
+          <ProofBadge type="critical">
+            500K rows lost in Parquet
+          </ProofBadge>
+          <ProofBadge type="success">
+            ConcurrentAppendException in Delta
+          </ProofBadge>
+        </ProofCell>
+        
+        <StatusCell>
+          <StatusBadge status="validated">✅ Validated</StatusBadge>
+        </StatusCell>
+      </MatrixRow>
+      
+      {/* Repeat for all 10 use cases... */}
+    </tbody>
+  </MatrixTable>
+</TraceabilityMatrix>
+```
+
+---
+
+### **4. Lecture Guide Section (Optional - Nice to Have)** 📚
+
+**Add before benchmarks - educational primer:**
+
+```jsx
+<LectureGuide>
+  <h2>🎓 Educational Context: CMU 15-721</h2>
+  
+  <CourseInfo>
+    <p>
+      This sandbox validates concepts from <strong>CMU 15-721: 
+      Advanced Database Systems</strong>, taught by Professor Andy Pavlo.
+    </p>
+    <p>
+      Each benchmark maps to specific lecture content, proving 
+      theory with empirical evidence.
+    </p>
+  </CourseInfo>
+  
+  <LectureTopics>
+    <TopicCard>
+      <LectureRange>Lectures 3-4</LectureRange>
+      <TopicName>Storage Models</TopicName>
+      <Validates>
+        ✓ Use Case 3: VARIANT Shredding
+        ✓ Use Case 4: Clustering Impact
+        ✓ Use Case 7: Compression
+      </Validates>
+    </TopicCard>
+    
+    <TopicCard>
+      <LectureRange>Lectures 13-15</LectureRange>
+      <TopicName>Concurrency Control</TopicName>
+      <Validates>
+        ✓ Use Case 5: ACID Integrity (OCC/MVCC)
+      </Validates>
+      <HighlightBadge>⭐ Featured: 500K rows lost!</HighlightBadge>
+    </TopicCard>
+    
+    {/* More topic cards... */}
+  </LectureTopics>
+</LectureGuide>
+```
+
+---
+
+## **Lecture Context Data Structure:**
+
+**Create a lecture context JSON:**
+
+```json
+{
+  "lectures": {
+    "L03": {
+      "number": "03",
+      "title": "Storage Models & Compression",
+      "url": "https://15721.courses.cs.cmu.edu/spring2023/lectures.html",
+      "key_concepts": [
+        "Columnar vs Row-based storage",
+        "Dictionary encoding",
+        "Run-length encoding (RLE)",
+        "PAX (Partition Attributes Across)"
+      ],
+      "use_cases": [3, 4, 7],
+      "quote": "Access patterns should match the storage layout",
+      "summary": "Why columnar storage is 10x more efficient for analytics: data compressed better, scans read only needed columns, vectorization works on contiguous data."
+    },
+    
+    "L13-15": {
+      "number": "13-15",
+      "title": "Concurrency Control",
+      "url": "https://15721.courses.cs.cmu.edu/spring2023/lectures.html",
+      "key_concepts": [
+        "Optimistic Concurrency Control (OCC)",
+        "Multi-Version Concurrency Control (MVCC)",
+        "Timestamp Ordering",
+        "Lost Update problem"
+      ],
+      "use_cases": [5],
+      "quote": "In OCC, transactions proceed without locks. On commit, validate that no other transaction modified the same data.",
+      "summary": "OCC assumes no conflicts (fast path), validates on commit (detects conflicts), aborts conflicting transactions (prevents Lost Updates). MVCC provides snapshot isolation via versioned data.",
+      "smoking_gun_context": "ConcurrentAppendException is proof OCC detected version conflict"
+    }
+    
+    // ... more lectures
+  }
+}
+```
+
+---
+
+## **UI Components to Build:**
+
+### **1. LectureContextBox Component:**
+
+```jsx
+const LectureContextBox = ({ lecture, useCase }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  return (
+    <div className="lecture-context-box">
+      <div className="lecture-header" onClick={() => setExpanded(!expanded)}>
+        <span className="lecture-number">
+          📚 Lecture {lecture.number}
+        </span>
+        <span className="lecture-title">
+          {lecture.title}
+        </span>
+        <button className="toggle-btn">
+          {expanded ? '▼' : '▶'}
+        </button>
+      </div>
+      
+      {expanded && (
+        <div className="lecture-details">
+          <blockquote className="key-quote">
+            "{lecture.quote}"
+          </blockquote>
+          
+          <div className="concepts">
+            <h4>Key Concepts:</h4>
+            <ul>
+              {lecture.key_concepts.map(concept => (
+                <li key={concept}>{concept}</li>
+              ))}
+            </ul>
+          </div>
+          
+          <div className="summary">
+            {lecture.summary}
+          </div>
+          
+          {lecture.smoking_gun_context && (
+            <div className="context-tip">
+              💡 <strong>What to look for:</strong> {lecture.smoking_gun_context}
+            </div>
+          )}
+          
+          <a href={lecture.url} target="_blank" className="lecture-link">
+            📺 Watch Lecture {lecture.number}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+---
+
+## **CSS Styling:**
+
+```css
+.lecture-context-box {
+  background: linear-gradient(135deg, #667eea15, #764ba215);
+  border-left: 4px solid #667eea;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.lecture-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.lecture-header:hover {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.lecture-number {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.lecture-title {
+  flex: 1;
+  font-size: 1.1rem;
+  color: #2c3e50;
+}
+
+.lecture-details {
+  padding: 1rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.key-quote {
+  font-style: italic;
+  color: #495057;
+  border-left: 3px solid #667eea;
+  padding-left: 1rem;
+  margin: 1rem 0;
+}
+
+.concepts ul {
+  list-style: none;
+  padding: 0;
+}
+
+.concepts li::before {
+  content: "✓ ";
+  color: #48bb78;
+  font-weight: bold;
+}
+
+.context-tip {
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  padding: 0.75rem;
+  margin: 1rem 0;
+  border-radius: 4px;
+}
+
+.lecture-link {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #667eea;
+  color: white;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.lecture-link:hover {
+  background: #5568d3;
+}
+```
+
+---
+
+## **Recommended Implementation Order:**
+
+1. **✅ Start Simple:** Add lecture badges to validation panels (1 hour)
+2. **✅ Add Context:** Create collapsible theory primers (2 hours)
+3. **✅ Enhance Matrix:** Make traceability matrix interactive (3 hours)
+4. **✅ Optional:** Build full lecture guide section (4+ hours)
+
+---
+
+## **Quick Win Example (Use Case 5):**
+
+```jsx
+<BenchmarkCard id="use-case-5">
+  {/* NEW: Lecture context at top */}
+  <LectureContextBox lecture={lectures["L13-15"]} useCase={5} />
+  
+  {/* Existing split panel */}
+  <SplitPanel>
+    <MetricsPanel>
+      {/* Charts showing Parquet vs Delta results */}
+    </MetricsPanel>
+    
+    <ValidationPanel>
+      <SmokingGun>
+        🎯 Parquet: 500,000 rows lost
+        ✅ Delta: ConcurrentAppendException
+      </SmokingGun>
+      
+      {/* NEW: Theory connection */}
+      <TheoryMapping>
+        <strong>Lecture 14 Concept:</strong>
+        "OCC validates on commit → aborts conflicting transactions"
+        
+        <ProofLine>
+          → ConcurrentAppendException = OCC working ✅
+        </ProofLine>
+      </TheoryMapping>
+    </ValidationPanel>
+  </SplitPanel>
+</BenchmarkCard>
+```
+
+---
+
+**Want me to generate:**
+1. Complete lecture context JSON for all 10 use cases?
+2. React component code for LectureContextBox?
+3. Enhanced validation panel with theory mapping?
+
+Let me know which piece you want first! 🚀
