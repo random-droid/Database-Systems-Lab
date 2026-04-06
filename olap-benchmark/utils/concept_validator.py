@@ -221,7 +221,20 @@ class ConceptValidator:
         all_confirmed = lost_update and occ_working and mvcc_working
 
         rows_lost = parquet_result.get("rows_silently_lost", 0)
-        exception_type = delta_conflict.get("writer_a_exception", "ConcurrentAppendException")
+        # Use rejected_exception (trimmed) if available; fall back to writer_a_exception
+        rejected_writer = delta_conflict.get("rejected_writer") or "A"
+        exception_type = (
+            delta_conflict.get("rejected_exception")
+            or delta_conflict.get("writer_a_exception")
+            or "ConcurrentAppendException"
+        )
+        # Extract just the class name for terse proof string
+        exc_class = exception_type
+        if "ConcurrentAppendException" in exception_type:
+            exc_class = "ConcurrentAppendException"
+        elif "ConcurrentModificationException" in exception_type:
+            exc_class = "ConcurrentModificationException"
+
         v0_rows = delta_snapshot.get("version_0_rows", 0)
         current_rows = delta_snapshot.get("current_version_rows", 0)
 
@@ -229,7 +242,7 @@ class ConceptValidator:
         if lost_update:
             proof_parts.append(f"Parquet: {rows_lost:,} rows silently lost (last-writer-wins)")
         if occ_working:
-            proof_parts.append(f"Delta OCC: {exception_type} raised for Writer A")
+            proof_parts.append(f"Delta OCC: {exc_class} raised for Writer {rejected_writer}")
         if mvcc_working:
             proof_parts.append(f"Delta MVCC: VERSION AS OF 0 → {v0_rows:,} rows (vs {current_rows:,} current)")
 

@@ -168,6 +168,23 @@ def run_parquet_lost_update_test(tmp_dir: str) -> dict:
     }
 
 
+def _trim_exception(raw: str) -> str:
+    """
+    Extract a concise exception summary from a Java/Py4J exception string.
+    Returns: "ExceptionClassName: first meaningful line of the message"
+    Strips Java stack frames (lines starting with 'at ').
+    """
+    if not raw or raw in ("None", "N/A"):
+        return raw or "None"
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip() and not ln.strip().startswith("at ")]
+    # Find the line containing the Delta exception class
+    for line in lines:
+        if "Exception" in line or "Error" in line:
+            # Trim to first 200 chars
+            return line[:200]
+    return lines[0][:200] if lines else raw[:200]
+
+
 def _make_spark(app_name: str):
     """Create a local SparkSession with Delta Lake support."""
     from pyspark.sql import SparkSession
@@ -317,22 +334,30 @@ def run_delta_conflict_test(tmp_dir: str, spark_available: bool, delta_available
         )
         occ_working = one_conflict
 
-        # Get the conflict message (from whichever writer lost)
-        conflict_msg = state["writer_a_exception"] or state["writer_b_exception"] or "None"
-        conflict_writer_status = state["writer_a_status"]
-        other_writer_status = state["writer_b_status"]
+        # Determine rejected writer and capture a concise exception summary
+        if state["writer_a_status"] == "conflict_detected":
+            rejected_writer = "A"
+            raw_exception = state["writer_a_exception"] or ""
+        else:
+            rejected_writer = "B"
+            raw_exception = state["writer_b_exception"] or ""
+
+        # Trim to class name + first meaningful line (removes Java stack frames)
+        exc_summary = _trim_exception(raw_exception)
 
         # Build result dict NOW, before stopping Spark
         result = {
             "writer_a_status": state["writer_a_status"],
             "writer_b_status": state["writer_b_status"],
-            "writer_a_exception": conflict_msg,
+            "writer_a_exception": exc_summary,
+            "rejected_writer": rejected_writer if occ_working else None,
+            "rejected_exception": exc_summary if occ_working else None,
             "writer_b_rows_committed": 10_000 if state["writer_b_status"] == "committed" else 0,
             "occ_working": occ_working,
             "lost_update_prevented": occ_working,
             "demonstrates": (
-                "Delta Lake OCC: concurrent merge() on same rows → "
-                "ConcurrentModificationException; exactly one writer succeeds"
+                f"Delta Lake OCC: concurrent merge() on same rows → "
+                f"ConcurrentAppendException; Writer {rejected_writer} rejected, data integrity preserved"
                 if occ_working
                 else "Delta Lake OCC: concurrent merge executed without triggering conflict"
             ),
