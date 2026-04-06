@@ -195,7 +195,8 @@ export const getGetBenchmarkResultsUrl = (
     | "complex_joins"
     | "variant_test"
     | "clustering"
-    | "acid_integrity",
+    | "acid_integrity"
+    | "vectorized_execution",
 ) => {
   return `/api/benchmarks/results/${useCase}`;
 };
@@ -206,7 +207,8 @@ export const getBenchmarkResults = async (
     | "complex_joins"
     | "variant_test"
     | "clustering"
-    | "acid_integrity",
+    | "acid_integrity"
+    | "vectorized_execution",
   options?: RequestInit,
 ): Promise<BenchmarkResults> => {
   return customFetch<BenchmarkResults>(getGetBenchmarkResultsUrl(useCase), {
@@ -221,7 +223,8 @@ export const getGetBenchmarkResultsQueryKey = (
     | "complex_joins"
     | "variant_test"
     | "clustering"
-    | "acid_integrity",
+    | "acid_integrity"
+    | "vectorized_execution",
 ) => {
   return [`/api/benchmarks/results/${useCase}`] as const;
 };
@@ -235,7 +238,8 @@ export const getGetBenchmarkResultsQueryOptions = <
     | "complex_joins"
     | "variant_test"
     | "clustering"
-    | "acid_integrity",
+    | "acid_integrity"
+    | "vectorized_execution",
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getBenchmarkResults>>,
@@ -285,7 +289,8 @@ export function useGetBenchmarkResults<
     | "complex_joins"
     | "variant_test"
     | "clustering"
-    | "acid_integrity",
+    | "acid_integrity"
+    | "vectorized_execution",
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getBenchmarkResults>>,
@@ -314,7 +319,8 @@ export const getRunBenchmarkUrl = (
     | "complex_joins"
     | "variant_test"
     | "clustering"
-    | "acid_integrity",
+    | "acid_integrity"
+    | "vectorized_execution",
 ) => {
   return `/api/benchmarks/run/${useCase}`;
 };
@@ -325,7 +331,8 @@ export const runBenchmark = async (
     | "complex_joins"
     | "variant_test"
     | "clustering"
-    | "acid_integrity",
+    | "acid_integrity"
+    | "vectorized_execution",
   options?: RequestInit,
 ): Promise<RunBenchmarkResponse> => {
   return customFetch<RunBenchmarkResponse>(getRunBenchmarkUrl(useCase), {
@@ -347,7 +354,8 @@ export const getRunBenchmarkMutationOptions = <
         | "complex_joins"
         | "variant_test"
         | "clustering"
-        | "acid_integrity";
+        | "acid_integrity"
+        | "vectorized_execution";
     },
     TContext
   >;
@@ -361,7 +369,8 @@ export const getRunBenchmarkMutationOptions = <
       | "complex_joins"
       | "variant_test"
       | "clustering"
-      | "acid_integrity";
+      | "acid_integrity"
+      | "vectorized_execution";
   },
   TContext
 > => {
@@ -382,7 +391,8 @@ export const getRunBenchmarkMutationOptions = <
         | "complex_joins"
         | "variant_test"
         | "clustering"
-        | "acid_integrity";
+        | "acid_integrity"
+        | "vectorized_execution";
     }
   > = (props) => {
     const { useCase } = props ?? {};
@@ -415,7 +425,8 @@ export const useRunBenchmark = <
         | "complex_joins"
         | "variant_test"
         | "clustering"
-        | "acid_integrity";
+        | "acid_integrity"
+        | "vectorized_execution";
     },
     TContext
   >;
@@ -429,7 +440,8 @@ export const useRunBenchmark = <
       | "complex_joins"
       | "variant_test"
       | "clustering"
-      | "acid_integrity";
+      | "acid_integrity"
+      | "vectorized_execution";
   },
   TContext
 > => {

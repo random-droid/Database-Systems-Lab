@@ -15,6 +15,8 @@ pnpm workspace monorepo using TypeScript + Python.
 - `benchmarks/benchmark_complex_joins.py` — Use Case 2: 3-table join stress test
 - `benchmarks/benchmark_variant_test.py` — Use Case 3: VARIANT shredding acid test
 - `benchmarks/benchmark_clustering.py` — Use Case 4: clustering & zone map test
+- `benchmarks/benchmark_acid_integrity.py` — Use Case 5: ACID Integrity & Concurrency Control
+- `benchmarks/benchmark_vectorized_execution.py` — Use Case 6: Vectorized Execution & SIMD
 - `utils/concept_validator.py` — maps metrics → CMU 15-721 concept annotations
 - `results/` — benchmark JSON output files (read by the API)
 
@@ -60,5 +62,7 @@ python3 benchmarks/benchmark_clustering.py
 - `olap-benchmark/results/use_case_2_complex_joins.json`
 - `olap-benchmark/results/use_case_3_variant_acid_test.json`
 - `olap-benchmark/results/use_case_4_clustering.json`
+- `olap-benchmark/results/use_case_5_acid_integrity.json`
+- `olap-benchmark/results/use_case_6_vectorized_execution.json`
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.

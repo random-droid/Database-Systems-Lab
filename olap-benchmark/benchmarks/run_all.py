@@ -91,6 +91,13 @@ def main():
         "run_acid_integrity_benchmark",
     )
 
+    # Use Case 6: Vectorized Execution & SIMD
+    suite_results["use_case_6_vectorized_execution"] = run_use_case(
+        "Use Case 6: Vectorized Execution & SIMD (DuckDB vs NumPy vs Python scalar)",
+        "benchmarks.benchmark_vectorized_execution",
+        "run_vectorized_benchmark",
+    )
+
     total_elapsed = time.time() - overall_start
 
     # Build summary
@@ -109,6 +116,8 @@ def main():
             "Lecture 06: External Algorithms": "Use Case 2 — Spill-to-disk on 50M row join",
             "Lecture 07: Vectorized Execution": "Use Case 1 — DuckDB vs Postgres throughput",
             "Lecture 09: Join Algorithms": "Use Case 2 — Broadcast vs shuffle vs merge join",
+            "Lectures 10-12: Vectorized Execution & SIMD": "Use Case 6 — DuckDB vs NumPy vs Python scalar",
+            "Lectures 13-15: OCC / MVCC": "Use Case 5 — Delta OCC conflict detection + MVCC time travel",
         },
     }
 

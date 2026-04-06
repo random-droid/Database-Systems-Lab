@@ -59,6 +59,7 @@ paths:
               - variant_test
               - clustering
               - acid_integrity
+              - vectorized_execution
       responses:
         "200":
           description: Benchmark results
@@ -91,6 +92,7 @@ paths:
               - variant_test
               - clustering
               - acid_integrity
+              - vectorized_execution
       responses:
         "200":
           description: Benchmark started

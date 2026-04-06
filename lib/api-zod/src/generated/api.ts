@@ -46,6 +46,7 @@ export const GetBenchmarkResultsParams = zod.object({
     "variant_test",
     "clustering",
     "acid_integrity",
+    "vectorized_execution",
   ]),
 });
 
@@ -66,6 +67,7 @@ export const RunBenchmarkParams = zod.object({
     "variant_test",
     "clustering",
     "acid_integrity",
+    "vectorized_execution",
   ]),
 });
 

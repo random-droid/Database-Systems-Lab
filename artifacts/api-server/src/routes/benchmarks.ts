@@ -19,7 +19,7 @@ const router: IRouter = Router();
 // State (in-process, single-worker)
 // ------------------------------------------------------------------
 
-type UseCase = "dashboards" | "complex_joins" | "variant_test" | "clustering" | "acid_integrity";
+type UseCase = "dashboards" | "complex_joins" | "variant_test" | "clustering" | "acid_integrity" | "vectorized_execution";
 
 const USE_CASE_FILES: Record<UseCase, string> = {
   dashboards: "use_case_1_dashboards.json",
@@ -27,6 +27,7 @@ const USE_CASE_FILES: Record<UseCase, string> = {
   variant_test: "use_case_3_variant_acid_test.json",
   clustering: "use_case_4_clustering.json",
   acid_integrity: "use_case_5_acid_integrity.json",
+  vectorized_execution: "use_case_6_vectorized_execution.json",
 };
 
 const USE_CASE_SCRIPTS: Record<UseCase, string> = {
@@ -35,6 +36,7 @@ const USE_CASE_SCRIPTS: Record<UseCase, string> = {
   variant_test: "benchmarks/benchmark_variant_test.py",
   clustering: "benchmarks/benchmark_clustering.py",
   acid_integrity: "benchmarks/benchmark_acid_integrity.py",
+  vectorized_execution: "benchmarks/benchmark_vectorized_execution.py",
 };
 
 // Resolve benchmark directory relative to the compiled file location.
