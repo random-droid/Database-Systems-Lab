@@ -29,6 +29,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from config.spark_config import get_spark_session
 from utils.spark_metrics import SparkMetricsCollector
 from utils.benchmark_timer import BenchmarkTimer
+from utils.concept_validator import ConceptValidator
 
 # The query (same for all systems)
 QUERY = """
@@ -309,7 +310,45 @@ def run_all_systems():
                     print(f"  🎯 SPILL: {spill['disk_spill_bytes'] / (1024**2):.1f} MB to disk")
     
     print(f"\n💾 Full results saved: {output_file}")
-    
+
+    # --- ConceptValidator: annotate results ---
+    validator = ConceptValidator()
+
+    # Postgres: external merge sort validation (pick the most-stressed work_mem)
+    if "postgres" in all_results:
+        pg = all_results["postgres"]
+        results_by_mem = pg.get("results_by_work_mem", {})
+        # Use 64MB (most likely to trigger external merge)
+        pg_metrics = results_by_mem.get("64MB", next(iter(results_by_mem.values())) if results_by_mem else {})
+        pg_validation = validator.validate_postgres_external_merge(pg_metrics)
+        all_results["postgres"]["validation"] = pg_validation
+        print("\n🐘 POSTGRES CONCEPT VALIDATION:")
+        validator.print_validation(pg_validation)
+
+    # DuckDB: out-of-core validation
+    if "duckdb" in all_results:
+        ddb = all_results["duckdb"]
+        ddb_validation = validator.validate_duckdb_out_of_core(ddb)
+        all_results["duckdb"]["validation"] = ddb_validation
+        print("\n🦆 DUCKDB CONCEPT VALIDATION:")
+        validator.print_validation(ddb_validation)
+
+    # Spark: spill-to-disk validation
+    if "spark" in all_results:
+        sp = all_results["spark"]
+        spill_metrics = sp.get("spill_metrics", {})
+        perf_metrics = {k: v for k, v in sp.items() if k not in ("spill_metrics", "system", "query")}
+        sp_validation = validator.validate_spark_spill(spill_metrics, perf_metrics)
+        all_results["spark"]["validation"] = sp_validation
+        print("\n⚡ SPARK CONCEPT VALIDATION:")
+        validator.print_validation(sp_validation)
+
+    # Re-save with validation blocks
+    with open(output_file, "w") as f:
+        json.dump(all_results, f, indent=2)
+
+    print(f"\nValidated results saved: {output_file}")
+
     return all_results
 
 if __name__ == '__main__':

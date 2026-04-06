@@ -21,6 +21,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from config.spark_config import get_spark_session
 from utils.spark_metrics import SparkMetricsCollector
 from utils.benchmark_timer import BenchmarkTimer
+from utils.concept_validator import ConceptValidator
 
 def test_variant_shredding():
     """
@@ -188,16 +189,34 @@ def test_variant_shredding():
         print(f"   Speedup: {speedup:.1f}x")
         print(f"   Memory difference: {memory_savings:.1f} MB")
     
+    # --- ConceptValidator: annotate results ---
+    validator = ConceptValidator()
+    validation = validator.validate_variant_shredding(
+        string_metrics={
+            "execution_time_seconds": results["string_json"]["execution_time_seconds"],
+            "peak_memory_mb": results["string_json"]["peak_memory_mb"],
+            "disk_spill_bytes": results["string_json"]["disk_spill_bytes"],
+        },
+        variant_metrics={
+            "execution_time_seconds": results["variant_shredded"]["execution_time_seconds"],
+            "peak_memory_mb": results["variant_shredded"]["peak_memory_mb"],
+            "disk_spill_bytes": results["variant_shredded"]["disk_spill_bytes"],
+        },
+    )
+    results["validation"] = validation
+    print("\n⚡ VARIANT CONCEPT VALIDATION:")
+    validator.print_validation(validation)
+
     # Save results
     output_dir = Path('results')
     output_dir.mkdir(exist_ok=True)
-    
+
     output_file = output_dir / 'use_case_3_variant_acid_test.json'
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2)
-    
+
     print(f"\n💾 Results saved: {output_file}")
-    
+
     return results
 
 def test_schema_evolution():

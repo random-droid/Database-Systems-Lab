@@ -26,6 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from config.spark_config import get_spark_session
 from utils.spark_metrics import SparkMetricsCollector
 from utils.benchmark_timer import BenchmarkTimer
+from utils.concept_validator import ConceptValidator
 
 # The dashboard query — same SQL for all systems
 DASHBOARD_QUERY = """
@@ -293,6 +294,24 @@ def run_all_systems():
 
     print(f"\nFull results: {output_file}")
 
+    # --- ConceptValidator: annotate results ---
+    validator = ConceptValidator()
+
+    # Buffer pool validation for each system
+    for system, data in all_results.items():
+        cold_hot = data.get("cold_hot", {})
+        if cold_hot:
+            cold_time = cold_hot.get("cold", {}).get("time_seconds", 1)
+            hot_time = cold_hot.get("hot", {}).get("time_seconds", 1)
+            validation = validator.validate_buffer_pool(cold_time, hot_time)
+            all_results[system]["validation"] = validation
+            validator.print_validation(validation)
+
+    # Re-save with validation blocks
+    with open(output_file, "w") as f:
+        json.dump(all_results, f, indent=2)
+
+    print(f"\nValidated results saved: {output_file}")
     return all_results
 
 
