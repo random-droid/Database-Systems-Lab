@@ -106,12 +106,12 @@ const USE_CASES: { id: UseCaseType; title: string; description: string; lecture:
 ];
 
 const TRACEABILITY_MATRIX = [
-  { benchmark: "Postgres join", lecture: "Lecture 06", concept: "External Merge Sort", proof: "temp written=N blocks" },
-  { benchmark: "Spark shuffle", lecture: "Lecture 06", concept: "External Algorithms", proof: "disk_spill_bytes=N MB" },
-  { benchmark: "DuckDB out-of-core", lecture: "Lecture 05", concept: "Buffer Pool Mgmt", proof: "peak_memory_mb > 2048" },
-  { benchmark: "VARIANT vs STRING", lecture: "Lecture 03", concept: "PAX Storage", proof: "Spill avoided" },
-  { benchmark: "Dashboard cold/hot", lecture: "Lecture 05", concept: "Buffer Pool Effects", proof: "hot_speedup > 3x" },
-  { benchmark: "Clustered heap", lecture: "Lecture 04", concept: "Storage Models", proof: "cluster_speedup > 3x" },
+  { benchmark: "VARIANT vs STRING JSON", lecture: "Lecture 03", concept: "PAX Storage", proof: "VARIANT avoids disk_spill_bytes; STRING spills" },
+  { benchmark: "Postgres CLUSTER heap", lecture: "Lecture 04", concept: "Storage Models (Clustered Index)", proof: "cluster_speedup > 3x; sequential vs random IO" },
+  { benchmark: "Dashboard cold/hot cache", lecture: "Lecture 05", concept: "Buffer Pool Management", proof: "hot_speedup > 3x; OS page cache eliminates disk IO" },
+  { benchmark: "Postgres join (low work_mem)", lecture: "Lecture 06", concept: "External Merge Sort", proof: "temp written=N blocks in EXPLAIN ANALYZE" },
+  { benchmark: "DuckDB dashboard query", lecture: "Lecture 07", concept: "Vectorized Execution", proof: "cpu_bound_percent > 75%; SIMD column-at-a-time" },
+  { benchmark: "DuckDB/Spark complex join", lecture: "Lecture 09", concept: "Join Algorithms", proof: "hash join in-memory vs broadcast shuffle vs merge join" },
 ];
 
 function ValidationPanel({ validation }: { validation: ValidationData }) {
@@ -235,63 +235,121 @@ function UseCaseSection({
   const isRunningThis = running && runningUseCase === useCase.id;
   const isRunningOther = running && runningUseCase !== useCase.id;
 
-  const renderPerSystemChart = (useCaseId: UseCaseType, system: string, data: Record<string, unknown>) => {
-    let chartData: { name: string; time: number }[] = [];
-    let barColor = "hsl(var(--primary))";
+  const renderTimeChart = (chartData: { name: string; time: number }[], barColor: string) => (
+    <div className="h-36 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+          <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
+          <Tooltip
+            contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
+            itemStyle={{ color: "hsl(var(--foreground))" }}
+            formatter={(v: number) => [`${v}s`, "Execution Time"]}
+            cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
+          />
+          <Bar dataKey="time" fill={barColor} radius={[2, 2, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
 
+  const renderCpuIoChart = (cpuPct: number, ioPct: number) => {
+    const cpuIoData = [{ name: "CPU-bound", pct: parseFloat(cpuPct.toFixed(1)) }, { name: "IO-bound", pct: parseFloat(ioPct.toFixed(1)) }];
+    return (
+      <div className="h-28 w-full">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">CPU / IO Split</p>
+        <ResponsiveContainer width="100%" height="80%">
+          <BarChart data={cpuIoData} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+            <XAxis type="number" domain={[0, 100]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
+            <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} width={62} />
+            <Tooltip
+              contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
+              formatter={(v: number) => [`${v}%`, "Share"]}
+              cursor={{ fill: "hsl(var(--muted) / 0.2)" }}
+            />
+            <Bar dataKey="pct" fill="hsl(var(--chart-3))" radius={[0, 2, 2, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
+
+  const renderPerSystemChart = (useCaseId: UseCaseType, system: string, data: Record<string, unknown>) => {
     if (useCaseId === "dashboards") {
       const d = data as unknown as DashboardSystemResult;
       const cold = d.cold_hot?.cold?.time_seconds ?? 0;
       const hot = d.cold_hot?.hot?.time_seconds ?? 0;
-      chartData = [
+      const speedup = d.cold_hot?.speedup;
+      const chartData = [
         { name: "Cold Run", time: parseFloat(cold.toFixed(3)) },
         { name: "Hot Run", time: parseFloat(hot.toFixed(3)) },
       ];
-      barColor = "hsl(var(--primary))";
-    } else if (useCaseId === "clustering") {
+      return (
+        <div className="flex flex-col gap-3 mt-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Execution Time</p>
+          {renderTimeChart(chartData, "hsl(var(--primary))")}
+          {speedup != null && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Cache speedup:</span>
+              <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 text-xs font-mono">{speedup.toFixed(1)}x faster (hot)</Badge>
+            </div>
+          )}
+          {(d.cpu_bound_percent != null) && renderCpuIoChart(d.cpu_bound_percent, d.io_bound_percent)}
+        </div>
+      );
+    }
+
+    if (useCaseId === "clustering") {
       const d = data as unknown as ClusteringSystemResult;
       const before = (d.unclustered ?? d.unsorted)?.total_time_seconds ?? 0;
       const after = (d.clustered ?? d.sorted)?.total_time_seconds ?? 0;
       const beforeLabel = d.unclustered ? "Unclustered" : "Unsorted";
       const afterLabel = d.clustered ? "Clustered" : "Sorted";
-      chartData = [
+      const chartData = [
         { name: beforeLabel, time: parseFloat(before.toFixed(3)) },
         { name: afterLabel, time: parseFloat(after.toFixed(3)) },
       ];
-      barColor = "hsl(var(--chart-2))";
-    } else if (useCaseId === "complex_joins") {
+      const beforeMetrics = d.unclustered ?? d.unsorted;
+      return (
+        <div className="flex flex-col gap-3 mt-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Execution Time</p>
+          {renderTimeChart(chartData, "hsl(var(--chart-2))")}
+          {d.speedup != null && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Cluster speedup:</span>
+              <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 text-xs font-mono">{d.speedup.toFixed(1)}x faster</Badge>
+            </div>
+          )}
+          {(beforeMetrics?.cpu_bound_percent != null) && renderCpuIoChart(beforeMetrics.cpu_bound_percent, beforeMetrics.io_bound_percent)}
+        </div>
+      );
+    }
+
+    if (useCaseId === "complex_joins") {
       const d = data as unknown as ComplexJoinsSystemResult;
+      let chartData: { name: string; time: number }[] = [];
+      let firstResult: WorkMemResult | undefined;
       if (d.results_by_work_mem) {
-        chartData = Object.entries(d.results_by_work_mem).map(([mem, res]) => ({
+        const entries = Object.entries(d.results_by_work_mem);
+        chartData = entries.map(([mem, res]) => ({
           name: mem,
           time: parseFloat((res.total_time_seconds ?? 0).toFixed(3)),
         }));
+        firstResult = entries[0]?.[1];
       } else if (d.total_time_seconds != null) {
         chartData = [{ name: system, time: parseFloat(d.total_time_seconds.toFixed(3)) }];
       }
-      barColor = "hsl(var(--chart-4))";
+      return (
+        <div className="flex flex-col gap-3 mt-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Execution Time by work_mem</p>
+          {chartData.length > 0 && renderTimeChart(chartData, "hsl(var(--chart-4))")}
+          {(firstResult?.cpu_bound_percent != null) && renderCpuIoChart(firstResult.cpu_bound_percent, firstResult.io_bound_percent)}
+        </div>
+      );
     }
 
-    if (chartData.length === 0) return null;
-
-    return (
-      <div className="h-48 w-full mt-4">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-            <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
-            <Tooltip
-              contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
-              itemStyle={{ color: "hsl(var(--foreground))" }}
-              formatter={(v: number) => [`${v}s`, "Time"]}
-              cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
-            />
-            <Bar dataKey="time" fill={barColor} radius={[2, 2, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    );
+    return null;
   };
 
   const renderVariantTest = (data: VariantTestResult) => {
