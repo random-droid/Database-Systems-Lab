@@ -58,6 +58,7 @@ paths:
               - complex_joins
               - variant_test
               - clustering
+              - acid_integrity
       responses:
         "200":
           description: Benchmark results
@@ -89,6 +90,7 @@ paths:
               - complex_joins
               - variant_test
               - clustering
+              - acid_integrity
       responses:
         "200":
           description: Benchmark started

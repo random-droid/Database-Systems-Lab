@@ -84,6 +84,13 @@ def main():
         "run_all_systems",
     )
 
+    # Use Case 5: ACID Integrity & Concurrency Control
+    suite_results["use_case_5_acid_integrity"] = run_use_case(
+        "Use Case 5: ACID Integrity & Concurrency Control",
+        "benchmarks.benchmark_acid_integrity",
+        "run_acid_integrity_benchmark",
+    )
+
     total_elapsed = time.time() - overall_start
 
     # Build summary

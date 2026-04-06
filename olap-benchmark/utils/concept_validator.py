@@ -201,6 +201,67 @@ class ConceptValidator:
 
         return validation
 
+    @staticmethod
+    def validate_acid_integrity(
+        parquet_result: Dict[str, Any],
+        delta_conflict: Dict[str, Any],
+        delta_snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Validate ACID integrity proofs from the concurrent-writers test.
+
+        Three signals:
+          1. Parquet lost-update confirmed (silent overwrite)
+          2. Delta ConcurrentAppendException caught (OCC working)
+          3. Delta VERSION AS OF 0 returns pre-write count (MVCC working)
+        """
+        lost_update = parquet_result.get("lost_update_confirmed", False)
+        occ_working = delta_conflict.get("occ_working", False)
+        mvcc_working = delta_snapshot.get("snapshot_isolation_confirmed", False)
+        all_confirmed = lost_update and occ_working and mvcc_working
+
+        rows_lost = parquet_result.get("rows_silently_lost", 0)
+        exception_type = delta_conflict.get("writer_a_exception", "ConcurrentAppendException")
+        v0_rows = delta_snapshot.get("version_0_rows", 0)
+        current_rows = delta_snapshot.get("current_version_rows", 0)
+
+        proof_parts = []
+        if lost_update:
+            proof_parts.append(f"Parquet: {rows_lost:,} rows silently lost (last-writer-wins)")
+        if occ_working:
+            proof_parts.append(f"Delta OCC: {exception_type} raised for Writer A")
+        if mvcc_working:
+            proof_parts.append(f"Delta MVCC: VERSION AS OF 0 → {v0_rows:,} rows (vs {current_rows:,} current)")
+
+        validation = {
+            "lecture": "CMU 15-721 Lectures 13-15: OCC / MVCC / Concurrency Control",
+            "concept": "OCC detects write-write conflicts at commit time; MVCC enables consistent snapshot reads",
+            "proof": " | ".join(proof_parts) if proof_parts else "See sub-test results",
+            "validates": "ACID lakehouse (Delta) vs raw file format (Parquet) — integrity is not free",
+            "status": "✅ OCC + MVCC confirmed" if all_confirmed else "⚠️  Partial results",
+            "confirmed": all_confirmed,
+        }
+
+        if all_confirmed:
+            validation["interpretation"] = (
+                f"Raw Parquet has NO conflict detection: Writer B silently overwrote Writer A, "
+                f"losing {rows_lost:,} rows with zero error. Delta Lake's OCC caught the same "
+                f"conflict at commit time ({exception_type}), preventing data corruption. "
+                f"The MVCC time-travel read proved snapshot isolation — VERSION AS OF 0 returned "
+                f"exactly {v0_rows:,} rows despite {current_rows:,} rows in the current version."
+            )
+        else:
+            parts = []
+            if not lost_update:
+                parts.append("Parquet lost-update not reproduced in this run")
+            if not occ_working:
+                parts.append("Delta OCC conflict not triggered (try larger dataset or install delta-spark)")
+            if not mvcc_working:
+                parts.append("Delta MVCC snapshot check inconclusive")
+            validation["interpretation"] = " | ".join(parts) if parts else "See sub-test results for details."
+
+        return validation
+
     @classmethod
     def print_validation(cls, validation: Dict[str, Any], indent: str = "   ") -> None:
         """Print color-coded validation to console."""

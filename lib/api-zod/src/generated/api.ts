@@ -45,6 +45,7 @@ export const GetBenchmarkResultsParams = zod.object({
     "complex_joins",
     "variant_test",
     "clustering",
+    "acid_integrity",
   ]),
 });
 
@@ -64,6 +65,7 @@ export const RunBenchmarkParams = zod.object({
     "complex_joins",
     "variant_test",
     "clustering",
+    "acid_integrity",
   ]),
 });
 

@@ -190,13 +190,23 @@ export function useGetBenchmarkStatus<
  * @summary Get results for a use case
  */
 export const getGetBenchmarkResultsUrl = (
-  useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering",
+  useCase:
+    | "dashboards"
+    | "complex_joins"
+    | "variant_test"
+    | "clustering"
+    | "acid_integrity",
 ) => {
   return `/api/benchmarks/results/${useCase}`;
 };
 
 export const getBenchmarkResults = async (
-  useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering",
+  useCase:
+    | "dashboards"
+    | "complex_joins"
+    | "variant_test"
+    | "clustering"
+    | "acid_integrity",
   options?: RequestInit,
 ): Promise<BenchmarkResults> => {
   return customFetch<BenchmarkResults>(getGetBenchmarkResultsUrl(useCase), {
@@ -206,7 +216,12 @@ export const getBenchmarkResults = async (
 };
 
 export const getGetBenchmarkResultsQueryKey = (
-  useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering",
+  useCase:
+    | "dashboards"
+    | "complex_joins"
+    | "variant_test"
+    | "clustering"
+    | "acid_integrity",
 ) => {
   return [`/api/benchmarks/results/${useCase}`] as const;
 };
@@ -215,7 +230,12 @@ export const getGetBenchmarkResultsQueryOptions = <
   TData = Awaited<ReturnType<typeof getBenchmarkResults>>,
   TError = ErrorType<ErrorResponse>,
 >(
-  useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering",
+  useCase:
+    | "dashboards"
+    | "complex_joins"
+    | "variant_test"
+    | "clustering"
+    | "acid_integrity",
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getBenchmarkResults>>,
@@ -260,7 +280,12 @@ export function useGetBenchmarkResults<
   TData = Awaited<ReturnType<typeof getBenchmarkResults>>,
   TError = ErrorType<ErrorResponse>,
 >(
-  useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering",
+  useCase:
+    | "dashboards"
+    | "complex_joins"
+    | "variant_test"
+    | "clustering"
+    | "acid_integrity",
   options?: {
     query?: UseQueryOptions<
       Awaited<ReturnType<typeof getBenchmarkResults>>,
@@ -284,13 +309,23 @@ export function useGetBenchmarkResults<
  * @summary Trigger a benchmark run
  */
 export const getRunBenchmarkUrl = (
-  useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering",
+  useCase:
+    | "dashboards"
+    | "complex_joins"
+    | "variant_test"
+    | "clustering"
+    | "acid_integrity",
 ) => {
   return `/api/benchmarks/run/${useCase}`;
 };
 
 export const runBenchmark = async (
-  useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering",
+  useCase:
+    | "dashboards"
+    | "complex_joins"
+    | "variant_test"
+    | "clustering"
+    | "acid_integrity",
   options?: RequestInit,
 ): Promise<RunBenchmarkResponse> => {
   return customFetch<RunBenchmarkResponse>(getRunBenchmarkUrl(useCase), {
@@ -306,14 +341,28 @@ export const getRunBenchmarkMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof runBenchmark>>,
     TError,
-    { useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering" },
+    {
+      useCase:
+        | "dashboards"
+        | "complex_joins"
+        | "variant_test"
+        | "clustering"
+        | "acid_integrity";
+    },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof runBenchmark>>,
   TError,
-  { useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering" },
+  {
+    useCase:
+      | "dashboards"
+      | "complex_joins"
+      | "variant_test"
+      | "clustering"
+      | "acid_integrity";
+  },
   TContext
 > => {
   const mutationKey = ["runBenchmark"];
@@ -327,7 +376,14 @@ export const getRunBenchmarkMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof runBenchmark>>,
-    { useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering" }
+    {
+      useCase:
+        | "dashboards"
+        | "complex_joins"
+        | "variant_test"
+        | "clustering"
+        | "acid_integrity";
+    }
   > = (props) => {
     const { useCase } = props ?? {};
 
@@ -353,14 +409,28 @@ export const useRunBenchmark = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof runBenchmark>>,
     TError,
-    { useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering" },
+    {
+      useCase:
+        | "dashboards"
+        | "complex_joins"
+        | "variant_test"
+        | "clustering"
+        | "acid_integrity";
+    },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof runBenchmark>>,
   TError,
-  { useCase: "dashboards" | "complex_joins" | "variant_test" | "clustering" },
+  {
+    useCase:
+      | "dashboards"
+      | "complex_joins"
+      | "variant_test"
+      | "clustering"
+      | "acid_integrity";
+  },
   TContext
 > => {
   return useMutation(getRunBenchmarkMutationOptions(options));

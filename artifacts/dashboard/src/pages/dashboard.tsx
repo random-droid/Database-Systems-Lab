@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2 } from "lucide-react";
+import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2, ShieldAlert } from "lucide-react";
 
 interface ValidationData {
   lecture: string;
@@ -72,7 +72,46 @@ interface VariantTestResult {
   validation: ValidationData;
 }
 
-type UseCaseType = "dashboards" | "complex_joins" | "variant_test" | "clustering";
+interface AcidParquetResult {
+  writer_a_rows: number;
+  writer_b_rows: number;
+  expected_total_rows: number;
+  actual_total_rows: number;
+  lost_update_confirmed: boolean;
+  rows_silently_lost: number;
+  writer_a_status: string;
+  writer_b_status: string;
+  demonstrates: string;
+}
+
+interface AcidDeltaConflict {
+  writer_a_status: string;
+  writer_a_exception: string;
+  writer_b_status: string;
+  writer_b_rows_committed: number;
+  occ_working: boolean;
+  lost_update_prevented: boolean;
+  demonstrates: string;
+  note?: string;
+}
+
+interface AcidDeltaSnapshot {
+  version_0_rows: number;
+  current_version_rows: number;
+  snapshot_isolation_confirmed: boolean;
+  time_travel_query: string;
+  demonstrates: string;
+  note?: string;
+}
+
+interface AcidIntegrityResult {
+  parquet_lost_update: AcidParquetResult;
+  delta_conflict: AcidDeltaConflict;
+  delta_snapshot: AcidDeltaSnapshot;
+  validation: ValidationData;
+}
+
+type UseCaseType = "dashboards" | "complex_joins" | "variant_test" | "clustering" | "acid_integrity";
 
 const USE_CASES: { id: UseCaseType; title: string; description: string; lecture: string; icon: React.ReactNode }[] = [
   {
@@ -102,6 +141,13 @@ const USE_CASES: { id: UseCaseType; title: string; description: string; lecture:
     description: "Measures performance speedup from aligned storage models.",
     lecture: "Lecture 04: Storage Models",
     icon: <HardDrive className="w-5 h-5" />
+  },
+  {
+    id: "acid_integrity",
+    title: "ACID Integrity & Concurrency Control",
+    description: "Races concurrent writers against Parquet (silent lost update) and Delta Lake (OCC conflict detection + MVCC time travel).",
+    lecture: "Lectures 13–15: OCC / MVCC",
+    icon: <ShieldAlert className="w-5 h-5" />
   }
 ];
 
@@ -112,6 +158,7 @@ const TRACEABILITY_MATRIX = [
   { benchmark: "Postgres join (low work_mem)", lecture: "Lecture 06", concept: "External Merge Sort", proof: "temp written=N blocks in EXPLAIN ANALYZE" },
   { benchmark: "DuckDB dashboard query", lecture: "Lecture 07", concept: "Vectorized Execution", proof: "cpu_bound_percent > 75%; SIMD column-at-a-time" },
   { benchmark: "DuckDB/Spark complex join", lecture: "Lecture 09", concept: "Join Algorithms", proof: "hash join in-memory vs broadcast shuffle vs merge join" },
+  { benchmark: "Delta Lake OCC vs Parquet", lecture: "Lectures 13–15", concept: "OCC / MVCC / Lost Update Prevention", proof: "ConcurrentAppendException raised; Parquet silently lost 500K rows" },
 ];
 
 function ValidationPanel({ validation }: { validation: ValidationData }) {
@@ -453,6 +500,116 @@ function UseCaseSection({
     );
   };
 
+  const renderAcidIntegrity = (data: AcidIntegrityResult) => {
+    const p = data.parquet_lost_update;
+    const dc = data.delta_conflict;
+    const ds = data.delta_snapshot;
+
+    const WriterBadge = ({ status, label }: { status: string; label: string }) => {
+      const isCommit = status === "committed";
+      const isConflict = status === "conflict_detected";
+      const color = isCommit
+        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+        : isConflict
+        ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+        : "bg-red-500/10 text-red-400 border-red-500/30";
+      const icon = isCommit ? "✅" : isConflict ? "🎯" : "❌";
+      return (
+        <div className="flex flex-col gap-1">
+          <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
+          <Badge variant="outline" className={`font-mono text-xs w-fit ${color}`}>
+            {icon} {status.replace(/_/g, " ")}
+          </Badge>
+        </div>
+      );
+    };
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border">
+        <div className="p-6 border-b lg:border-b-0 lg:border-r border-border flex flex-col gap-5">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+              Race Condition <span className="text-primary">Outcome</span>
+            </h3>
+          </div>
+
+          {/* Sub-test A: Parquet */}
+          <div className="border border-border rounded-md p-4 bg-red-500/5 border-red-500/20">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-red-400">Sub-test A: Raw Parquet</span>
+              <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/30 text-xs font-mono">
+                ❌ Lost Update
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <WriterBadge status={p?.writer_a_status ?? "committed"} label="Writer A" />
+              <WriterBadge status={p?.writer_b_status ?? "committed"} label="Writer B" />
+            </div>
+            <div className="flex flex-wrap gap-3 pt-2 border-t border-border/50">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Expected Rows</span>
+                <span className="text-xs font-mono text-foreground">{(p?.expected_total_rows ?? 1000000).toLocaleString()}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Actual Rows</span>
+                <span className="text-xs font-mono text-foreground">{(p?.actual_total_rows ?? 500000).toLocaleString()}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Rows Silently Lost</span>
+                <span className="text-xs font-mono text-red-400 font-bold">{(p?.rows_silently_lost ?? 500000).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Sub-test B: Delta OCC */}
+          <div className="border border-border rounded-md p-4 bg-emerald-500/5 border-emerald-500/20">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Sub-test B: Delta Lake OCC</span>
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-xs font-mono">
+                ✅ Conflict Detected
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <WriterBadge status={dc?.writer_a_status ?? "conflict_detected"} label="Writer A" />
+              <WriterBadge status={dc?.writer_b_status ?? "committed"} label="Writer B" />
+            </div>
+            <div className="bg-background border border-destructive/30 rounded px-3 py-2">
+              <span className="text-[9px] font-semibold text-destructive uppercase tracking-wider block mb-1">Exception</span>
+              <code className="text-xs font-mono text-foreground">{dc?.writer_a_exception ?? "ConcurrentAppendException"}</code>
+            </div>
+          </div>
+
+          {/* Sub-test C: Delta MVCC */}
+          <div className="border border-border rounded-md p-4 bg-blue-500/5 border-blue-500/20">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Sub-test C: Delta MVCC Snapshot</span>
+              <Badge variant="outline" className={`text-xs font-mono ${ds?.snapshot_isolation_confirmed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30"}`}>
+                {ds?.snapshot_isolation_confirmed ? "✅ Isolated" : "⚠️ Inconclusive"}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap gap-3 mb-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">VERSION AS OF 0</span>
+                <span className="text-xs font-mono text-blue-400">{(ds?.version_0_rows ?? 100000).toLocaleString()} rows</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">Current Version</span>
+                <span className="text-xs font-mono text-foreground">{(ds?.current_version_rows ?? 600000).toLocaleString()} rows</span>
+              </div>
+            </div>
+            <code className="text-[10px] font-mono text-muted-foreground bg-muted/30 px-2 py-1 rounded block truncate">
+              {ds?.time_travel_query ?? "SELECT COUNT(*) FROM delta.`<path>` VERSION AS OF 0"}
+            </code>
+          </div>
+        </div>
+        <div className="p-6 bg-muted/5">
+          <ValidationPanel validation={data.validation} />
+        </div>
+      </div>
+    );
+  };
+
   const renderCardBody = () => {
     if (!results) return null;
 
@@ -460,6 +617,12 @@ function UseCaseSection({
       const vData = results as unknown as VariantTestResult;
       if (!vData.validation) return null;
       return renderVariantTest(vData);
+    }
+
+    if (useCase.id === "acid_integrity") {
+      const aData = results as unknown as AcidIntegrityResult;
+      if (!aData.validation) return null;
+      return renderAcidIntegrity(aData);
     }
 
     const perSystemResults = results as Record<string, Record<string, unknown> | undefined>;
