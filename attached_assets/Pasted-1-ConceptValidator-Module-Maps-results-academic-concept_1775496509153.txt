@@ -1,0 +1,96 @@
+1. ConceptValidator Module
+Maps results → academic concepts with color-coded output
+Validates:
+
+Postgres: External merge join (temp files)
+Spark: Spill-to-disk (UI metrics)
+DuckDB: Out-of-core processing (peak memory)
+VARIANT: Shredding effectiveness (spill comparison)
+Buffer Pool: Cold vs hot scans (speedup)
+
+2. Enhanced Console Output
+Before (just metrics):
+bash🐘 POSTGRES: 64MB work_mem
+   Time: 120.5s
+   Temp written: 45678 blocks
+After (with concept validation):
+bash🐘 POSTGRES: 64MB work_mem
+   Time: 120.5s
+   CPU/IO: 30% / 70%
+   
+   🎯 CONCEPT VALIDATED
+   ✅ CMU 15-721 Lecture 06: External Merge Sort
+   📖 Volcano Model degrades to disk-based merge join under buffer pressure
+      Proof: EXPLAIN BUFFERS: temp written=45678 blocks
+      Validates: Article 2: Tuple-at-a-time execution becomes IO-bound
+   
+   💡 What this means:
+      Postgres exceeded work_mem → switched to external merge join.
+      The 70% IO wait confirms disk operations dominate.
+3. Enhanced JSON Results
+Each result now includes:
+json{
+  "metrics": {
+    "total_time_seconds": 120.5,
+    "cpu_bound_percent": 30,
+    "io_bound_percent": 70
+  },
+  "validation": {
+    "lecture": "CMU 15-721 Lecture 06: External Merge Sort",
+    "concept": "Volcano Model degrades to disk-based...",
+    "proof": "EXPLAIN BUFFERS: temp written=45678 blocks",
+    "validates": "Article 2: Tuple-at-a-time...",
+    "status": "✅ Confirmed",
+    "confirmed": true,
+    "interpretation": "Postgres exceeded work_mem..."
+  }
+}
+
+Example: Spark Spill Output
+bash⚡ SPARK: 15.3s
+   CPU/IO: 42% / 58%
+   
+   🎯 CONCEPT VALIDATED
+   ✅ CMU 15-721 Lecture 06: External Algorithms
+   📖 Sort-merge shuffle spills to disk when shuffle data exceeds memory
+      Proof: Spark UI: disk_spill_bytes=234.5 MB
+      Validates: Article 5: Distributed systems use external merge sort
+   
+   💡 What this means:
+      Spark shuffle exceeded memory → spilled 234.5 MB to disk. The 58%
+      IO wait confirms external merge active. This is graceful
+      degradation, not failure.
+
+Example: VARIANT Acid Test Output
+bashVARIANT (Shredded):
+  Time: 6.2s
+  Peak memory: 1600 MB
+  Spilled to disk: NO ✅
+  
+  🎯 CONCEPT VALIDATED
+  ✅ CMU 15-721 Lecture 03: Data Models (PAX Storage)
+  📖 Sub-columnar shredding reduces memory footprint for semi-structured data
+     Proof: STRING JSON: spilled, VARIANT: no spill
+     Validates: Article 1: VARIANT avoids "JSON tax" via PAX-style layout
+  
+  💡 What this means:
+     STRING JSON forced full parse → spilled 1234 MB. VARIANT's shredded
+     sub-columns stayed in-memory. Result: 3.0x faster, 800 MB less memory.
+
+What This Achieves:
+✅ Self-documenting - Results explain what they prove
+✅ Educational - Every metric tied to concept
+✅ Not finicky - Just enhanced logging (~100 lines of code)
+✅ Article-ready - JSON has everything for Article 7
+✅ Visual clarity - Color-coded, structured output
+
+The Value:
+Without validation:
+
+"Postgres took 120s with 70% IO wait"
+
+With validation:
+
+"Postgres took 120s with 70% IO wait → proves CMU 15-721 Lecture 06 concept of external merge sort under buffer pressure → validates Article 2 claim about tuple-at-a-time becoming IO-bound → the 45678 temp blocks written is the smoking gun"
+
+This transforms raw numbers into pedagogical proof. 🎯
