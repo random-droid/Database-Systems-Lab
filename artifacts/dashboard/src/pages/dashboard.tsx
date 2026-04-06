@@ -1,4 +1,4 @@
-import { useGetBenchmarkStatus, useRunBenchmark, getGetBenchmarkResultsQueryKey, useGetBenchmarkResults } from "@workspace/api-client-react";
+import { useGetBenchmarkStatus, useRunBenchmark, getGetBenchmarkResultsQueryKey, getGetBenchmarkStatusQueryKey, useGetBenchmarkResults } from "@workspace/api-client-react";
 import { useEffect, useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,8 +6,71 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { Activity, Play, TerminalSquare, AlertTriangle, CheckCircle2, Database, Zap, HardDrive, Cpu, Server, Table as TableIcon } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2 } from "lucide-react";
+
+interface ValidationData {
+  lecture: string;
+  concept: string;
+  proof: string;
+  validates: string;
+  status: string;
+  confirmed: boolean;
+  interpretation: string;
+}
+
+interface IoMetrics {
+  total_time_seconds: number;
+  cpu_bound_percent: number;
+  io_bound_percent: number;
+  peak_memory_mb: number;
+}
+
+interface ColdHot {
+  cold: { time_seconds: number };
+  hot: { time_seconds: number };
+  speedup: number;
+}
+
+interface DashboardSystemResult extends IoMetrics {
+  system: string;
+  cold_hot: ColdHot;
+  scan_strategy?: string;
+  validation: ValidationData;
+}
+
+interface WorkMemResult extends IoMetrics {
+  work_mem: string;
+  temp_files_used: boolean;
+  temp_written_blocks: number;
+  join_strategy: string;
+  external_merge: boolean;
+}
+
+interface ComplexJoinsSystemResult {
+  system: string;
+  results_by_work_mem?: Record<string, WorkMemResult>;
+  total_time_seconds?: number;
+  peak_memory_mb?: number;
+  validation: ValidationData;
+}
+
+interface ClusteringSystemResult {
+  system: string;
+  unclustered?: IoMetrics;
+  clustered?: IoMetrics;
+  unsorted?: IoMetrics;
+  sorted?: IoMetrics;
+  speedup?: number;
+  validation?: ValidationData;
+}
+
+interface VariantTestResult {
+  string_json: { execution_time_seconds: number; peak_memory_mb: number; disk_spill_bytes: number; spilled_to_disk: boolean };
+  variant_shredded: { execution_time_seconds: number; peak_memory_mb: number; disk_spill_bytes: number; spilled_to_disk: boolean };
+  proof: { speedup: number; memory_savings_mb: number; variant_avoided_spill: boolean; conclusion: string };
+  validation: ValidationData;
+}
 
 type UseCaseType = "dashboards" | "complex_joins" | "variant_test" | "clustering";
 
@@ -172,59 +235,139 @@ function UseCaseSection({
   const isRunningThis = running && runningUseCase === useCase.id;
   const isRunningOther = running && runningUseCase !== useCase.id;
 
-  const renderMetrics = (system: string, data: any) => {
-    if (!data) return null;
+  const renderPerSystemChart = (useCaseId: UseCaseType, system: string, data: Record<string, unknown>) => {
+    let chartData: { name: string; time: number }[] = [];
+    let barColor = "hsl(var(--primary))";
 
-    let chartData: any[] = [];
-    let bars: React.ReactNode = null;
-
-    if (useCase.id === "dashboards") {
+    if (useCaseId === "dashboards") {
+      const d = data as unknown as DashboardSystemResult;
+      const cold = d.cold_hot?.cold?.time_seconds ?? 0;
+      const hot = d.cold_hot?.hot?.time_seconds ?? 0;
       chartData = [
-        { name: "Cold Run", time: data.cold_ms || data.time_ms || 0 },
-        { name: "Hot Run", time: data.hot_ms || (data.time_ms ? data.time_ms * 0.8 : 0) }
+        { name: "Cold Run", time: parseFloat(cold.toFixed(3)) },
+        { name: "Hot Run", time: parseFloat(hot.toFixed(3)) },
       ];
-      bars = <Bar dataKey="time" fill="hsl(var(--primary))" radius={[2, 2, 0, 0]} />;
-    } else if (useCase.id === "clustering") {
+      barColor = "hsl(var(--primary))";
+    } else if (useCaseId === "clustering") {
+      const d = data as unknown as ClusteringSystemResult;
+      const before = (d.unclustered ?? d.unsorted)?.total_time_seconds ?? 0;
+      const after = (d.clustered ?? d.sorted)?.total_time_seconds ?? 0;
+      const beforeLabel = d.unclustered ? "Unclustered" : "Unsorted";
+      const afterLabel = d.clustered ? "Clustered" : "Sorted";
       chartData = [
-        { name: "Unclustered", time: data.unclustered?.time_ms || data.unsorted?.time_ms || 0 },
-        { name: "Clustered", time: data.clustered?.time_ms || data.sorted?.time_ms || 0 }
+        { name: beforeLabel, time: parseFloat(before.toFixed(3)) },
+        { name: afterLabel, time: parseFloat(after.toFixed(3)) },
       ];
-      bars = <Bar dataKey="time" fill="hsl(var(--chart-2))" radius={[2, 2, 0, 0]} />;
-    } else if (useCase.id === "variant_test") {
-      chartData = [
-        { name: "String JSON", time: data.string_json?.time_ms || 0 },
-        { name: "VARIANT", time: data.variant_shredded?.time_ms || 0 }
-      ];
-      bars = <Bar dataKey="time" fill="hsl(var(--chart-3))" radius={[2, 2, 0, 0]} />;
-    } else if (useCase.id === "complex_joins") {
-      if (data.results_by_work_mem) {
-        chartData = Object.entries(data.results_by_work_mem).map(([mem, res]: [string, any]) => ({
+      barColor = "hsl(var(--chart-2))";
+    } else if (useCaseId === "complex_joins") {
+      const d = data as unknown as ComplexJoinsSystemResult;
+      if (d.results_by_work_mem) {
+        chartData = Object.entries(d.results_by_work_mem).map(([mem, res]) => ({
           name: mem,
-          time: res.time_ms || 0
+          time: parseFloat((res.total_time_seconds ?? 0).toFixed(3)),
         }));
-      } else {
-        chartData = [{ name: "Execution", time: data.time_ms || 0 }];
+      } else if (d.total_time_seconds != null) {
+        chartData = [{ name: system, time: parseFloat(d.total_time_seconds.toFixed(3)) }];
       }
-      bars = <Bar dataKey="time" fill="hsl(var(--chart-4))" radius={[2, 2, 0, 0]} />;
+      barColor = "hsl(var(--chart-4))";
     }
+
+    if (chartData.length === 0) return null;
 
     return (
       <div className="h-48 w-full mt-4">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-            <XAxis dataKey="name" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}ms`} />
-            <Tooltip 
-              contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '4px' }}
-              itemStyle={{ color: 'hsl(var(--foreground))' }}
-              cursor={{ fill: 'hsl(var(--muted)/0.5)' }}
+            <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
+            <Tooltip
+              contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
+              itemStyle={{ color: "hsl(var(--foreground))" }}
+              formatter={(v: number) => [`${v}s`, "Time"]}
+              cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
             />
-            {bars}
+            <Bar dataKey="time" fill={barColor} radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
     );
+  };
+
+  const renderVariantTest = (data: VariantTestResult) => {
+    const chartData = [
+      { name: "STRING JSON", time: parseFloat((data.string_json.execution_time_seconds ?? 0).toFixed(3)) },
+      { name: "VARIANT", time: parseFloat((data.variant_shredded.execution_time_seconds ?? 0).toFixed(3)) },
+    ];
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border">
+        <div className="p-6 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
+          <div className="flex items-center gap-2 mb-4">
+            <Server className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+              Spark: <span className="text-primary">STRING vs VARIANT</span>
+            </h3>
+          </div>
+          <div className="h-48 w-full mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                  formatter={(v: number) => [`${v}s`, "Time"]}
+                  cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
+                />
+                <Bar dataKey="time" fill="hsl(var(--chart-3))" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          {data.proof && (
+            <div className="mt-4 text-xs text-muted-foreground font-mono">
+              Speedup: <span className="text-primary">{data.proof.speedup}x</span>
+              {" | "}Memory savings: <span className="text-primary">{data.proof.memory_savings_mb} MB</span>
+            </div>
+          )}
+        </div>
+        <div className="p-6 bg-muted/5">
+          <ValidationPanel validation={data.validation} />
+        </div>
+      </div>
+    );
+  };
+
+  const renderCardBody = () => {
+    if (!results) return null;
+
+    if (useCase.id === "variant_test") {
+      const vData = results as unknown as VariantTestResult;
+      if (!vData.validation) return null;
+      return renderVariantTest(vData);
+    }
+
+    const perSystemResults = results as Record<string, Record<string, unknown> | undefined>;
+    return Object.entries(perSystemResults).map(([system, sysData]) => {
+      if (!sysData || !("validation" in sysData)) return null;
+      const validation = sysData.validation as ValidationData;
+      return (
+        <div key={system} className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border last:border-0">
+          <div className="p-6 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
+            <div className="flex items-center gap-2 mb-4">
+              <Server className="w-4 h-4 text-muted-foreground" />
+              <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
+                System: <span className="text-primary">{system}</span>
+              </h3>
+            </div>
+            {renderPerSystemChart(useCase.id, system, sysData)}
+          </div>
+          <div className="p-6 bg-muted/5">
+            <ValidationPanel validation={validation} />
+          </div>
+        </div>
+      );
+    });
   };
 
   return (
@@ -239,20 +382,20 @@ function UseCaseSection({
             {useCase.description}
           </CardDescription>
         </div>
-        <Button 
-          onClick={() => onRun(useCase.id)} 
+        <Button
+          onClick={() => onRun(useCase.id)}
           disabled={running}
           variant={isRunningThis ? "outline" : "default"}
           className="min-w-[100px] font-mono uppercase tracking-wider"
         >
           {isRunningThis ? (
-             <><Activity className="w-4 h-4 mr-2 animate-pulse text-primary" /> Running</>
+            <><Activity className="w-4 h-4 mr-2 animate-pulse text-primary" /> Running</>
           ) : (
             <><Play className="w-4 h-4 mr-2" /> Execute</>
           )}
         </Button>
       </CardHeader>
-      
+
       <CardContent className="p-0 flex-grow flex flex-col">
         {!results && !isRunningThis && (
           <div className="p-12 text-center text-muted-foreground flex flex-col items-center justify-center flex-grow opacity-50">
@@ -261,26 +404,7 @@ function UseCaseSection({
             <p className="text-xs mt-2 max-w-xs">Execute benchmark to generate validation results.</p>
           </div>
         )}
-        
-        {results && Object.entries(results as any).map(([system, sysData]: [string, any]) => {
-          if (!sysData || !sysData.validation) return null;
-          return (
-            <div key={system} className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border last:border-0">
-              <div className="p-6 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
-                <div className="flex items-center gap-2 mb-4">
-                  <Server className="w-4 h-4 text-muted-foreground" />
-                  <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
-                    System: <span className="text-primary">{system}</span>
-                  </h3>
-                </div>
-                {renderMetrics(system, sysData)}
-              </div>
-              <div className="p-6 bg-muted/5">
-                <ValidationPanel validation={sysData.validation} />
-              </div>
-            </div>
-          );
-        })}
+        {renderCardBody()}
       </CardContent>
     </Card>
   );
@@ -290,7 +414,10 @@ function UseCaseSection({
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const { data: status } = useGetBenchmarkStatus({
-    query: { refetchInterval: (query) => query.state.data?.running ? 3000 : false }
+    query: {
+      queryKey: getGetBenchmarkStatusQueryKey(),
+      refetchInterval: (query) => query.state.data?.running ? 3000 : false
+    }
   });
   
   const runBenchmark = useRunBenchmark();
