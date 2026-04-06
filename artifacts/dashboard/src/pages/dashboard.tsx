@@ -239,6 +239,19 @@ function UseCaseSection({
   const isRunningThis = running && runningUseCase === useCase.id;
   const isRunningOther = running && runningUseCase !== useCase.id;
 
+  type StatChip = { label: string; value: string; highlight?: boolean };
+
+  const StatStrip = ({ stats }: { stats: StatChip[] }) => (
+    <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
+      {stats.map((s) => (
+        <div key={s.label} className="flex flex-col gap-0.5">
+          <span className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">{s.label}</span>
+          <span className={`text-xs font-mono ${s.highlight ? "text-primary" : "text-foreground"}`}>{s.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+
   const renderMetricChart = (
     chartData: { name: string; time: number }[],
     barColor: string,
@@ -247,64 +260,70 @@ function UseCaseSection({
     ioPct?: number,
     speedupLabel?: string,
     speedupValue?: number,
+    extraStats?: StatChip[],
   ) => {
     const cpuIoData = cpuPct != null
       ? [{ name: "CPU", pct: parseFloat(cpuPct.toFixed(1)) }, { name: "IO", pct: parseFloat((ioPct ?? 0).toFixed(1)) }]
       : [];
 
     return (
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        {/* Left: timing bar chart */}
-        <div className="flex flex-col gap-1">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
-          <div className="h-40">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
-                  itemStyle={{ color: "hsl(var(--foreground))" }}
-                  formatter={(v: number) => [`${v}s`, "Time"]}
-                  cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
-                />
-                <Bar dataKey="time" fill={barColor} radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+      <div className="mt-3 flex flex-col gap-0">
+        <div className="grid grid-cols-2 gap-3">
+          {/* Left: timing bar chart */}
+          <div className="flex flex-col gap-1">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+            <div className="h-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
+                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    formatter={(v: number) => [`${v}s`, "Time"]}
+                    cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
+                  />
+                  <Bar dataKey="time" fill={barColor} radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Right: CPU/IO split + speedup badge */}
+          <div className="flex flex-col gap-2 justify-center">
+            {speedupValue != null && (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{speedupLabel ?? "Speedup"}</p>
+                <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 text-sm font-mono w-fit">
+                  {speedupValue.toFixed(1)}x faster
+                </Badge>
+              </div>
+            )}
+            {cpuIoData.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">CPU / IO Split</p>
+                <div className="h-20">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={cpuIoData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+                      <XAxis type="number" domain={[0, 100]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
+                      <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
+                        formatter={(v: number) => [`${v}%`, "Share"]}
+                        cursor={{ fill: "hsl(var(--muted) / 0.2)" }}
+                      />
+                      <Bar dataKey="pct" fill="hsl(var(--chart-3))" radius={[0, 2, 2, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right: CPU/IO split + speedup badge */}
-        <div className="flex flex-col gap-2 justify-center">
-          {speedupValue != null && (
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{speedupLabel ?? "Speedup"}</p>
-              <Badge variant="outline" className="text-emerald-400 border-emerald-500/30 text-sm font-mono w-fit">
-                {speedupValue.toFixed(1)}x faster
-              </Badge>
-            </div>
-          )}
-          {cpuIoData.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">CPU / IO Split</p>
-              <div className="h-20">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={cpuIoData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
-                    <XAxis type="number" domain={[0, 100]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
-                    <YAxis type="category" dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
-                      formatter={(v: number) => [`${v}%`, "Share"]}
-                      cursor={{ fill: "hsl(var(--muted) / 0.2)" }}
-                    />
-                    <Bar dataKey="pct" fill="hsl(var(--chart-3))" radius={[0, 2, 2, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Extra stat chips row */}
+        {extraStats && extraStats.length > 0 && <StatStrip stats={extraStats} />}
       </div>
     );
   };
@@ -314,11 +333,16 @@ function UseCaseSection({
       const d = data as unknown as DashboardSystemResult;
       const cold = d.cold_hot?.cold?.time_seconds ?? 0;
       const hot = d.cold_hot?.hot?.time_seconds ?? 0;
+      const stats: StatChip[] = [];
+      if (d.total_time_seconds != null) stats.push({ label: "Avg Time", value: `${d.total_time_seconds.toFixed(2)}s` });
+      if (d.peak_memory_mb != null) stats.push({ label: "Peak Mem", value: `${d.peak_memory_mb} MB` });
+      if (d.scan_strategy) stats.push({ label: "Scan", value: d.scan_strategy, highlight: true });
       return renderMetricChart(
         [{ name: "Cold", time: parseFloat(cold.toFixed(3)) }, { name: "Hot", time: parseFloat(hot.toFixed(3)) }],
         "hsl(var(--primary))", "Execution Time",
         d.cpu_bound_percent, d.io_bound_percent,
         "Cache Speedup", d.cold_hot?.speedup,
+        stats,
       );
     }
 
@@ -329,11 +353,16 @@ function UseCaseSection({
       const beforeLabel = d.unclustered ? "Before" : "Unsorted";
       const afterLabel = d.clustered ? "After" : "Sorted";
       const beforeMetrics = d.unclustered ?? d.unsorted;
+      const afterMetrics = d.clustered ?? d.sorted;
+      const stats: StatChip[] = [];
+      if (beforeMetrics?.peak_memory_mb != null) stats.push({ label: "Mem (before)", value: `${beforeMetrics.peak_memory_mb} MB` });
+      if (afterMetrics?.peak_memory_mb != null) stats.push({ label: "Mem (after)", value: `${afterMetrics.peak_memory_mb} MB` });
       return renderMetricChart(
         [{ name: beforeLabel, time: parseFloat(before.toFixed(3)) }, { name: afterLabel, time: parseFloat(after.toFixed(3)) }],
         "hsl(var(--chart-2))", "Execution Time",
         beforeMetrics?.cpu_bound_percent, beforeMetrics?.io_bound_percent,
         "Cluster Speedup", d.speedup,
+        stats,
       );
     }
 
@@ -348,8 +377,13 @@ function UseCaseSection({
       } else if (d.total_time_seconds != null) {
         chartData = [{ name: system, time: parseFloat(d.total_time_seconds.toFixed(3)) }];
       }
+      const stats: StatChip[] = [];
+      if (d.peak_memory_mb != null) stats.push({ label: "Peak Mem", value: `${d.peak_memory_mb} MB` });
+      if (firstResult?.join_strategy) stats.push({ label: "Join Strategy", value: firstResult.join_strategy, highlight: true });
+      if (firstResult?.temp_files_used != null) stats.push({ label: "Temp Files", value: firstResult.temp_files_used ? "Yes (spilled)" : "No", highlight: firstResult.temp_files_used });
+      if (firstResult?.external_merge != null) stats.push({ label: "External Merge", value: firstResult.external_merge ? "Yes" : "No", highlight: firstResult.external_merge });
       return chartData.length > 0
-        ? renderMetricChart(chartData, "hsl(var(--chart-4))", "Time by work_mem", firstResult?.cpu_bound_percent, firstResult?.io_bound_percent)
+        ? renderMetricChart(chartData, "hsl(var(--chart-4))", "Time by work_mem", firstResult?.cpu_bound_percent, firstResult?.io_bound_percent, undefined, undefined, stats)
         : null;
     }
 
@@ -358,40 +392,59 @@ function UseCaseSection({
 
   const renderVariantTest = (data: VariantTestResult) => {
     const chartData = [
-      { name: "STRING JSON", time: parseFloat((data.string_json.execution_time_seconds ?? 0).toFixed(3)) },
+      { name: "STRING", time: parseFloat((data.string_json.execution_time_seconds ?? 0).toFixed(3)) },
       { name: "VARIANT", time: parseFloat((data.variant_shredded.execution_time_seconds ?? 0).toFixed(3)) },
     ];
+    const memChartData = [
+      { name: "STRING", mem: data.string_json.peak_memory_mb ?? 0 },
+      { name: "VARIANT", mem: data.variant_shredded.peak_memory_mb ?? 0 },
+    ];
+    const statChips: StatChip[] = [];
+    if (data.proof?.speedup != null) statChips.push({ label: "Speedup", value: `${data.proof.speedup}x`, highlight: true });
+    if (data.proof?.memory_savings_mb != null) statChips.push({ label: "Mem Saved", value: `${data.proof.memory_savings_mb} MB`, highlight: true });
+    if (data.string_json.spilled_to_disk != null) statChips.push({ label: "STRING spill", value: data.string_json.spilled_to_disk ? "Yes" : "No" });
+    if (data.variant_shredded.spilled_to_disk != null) statChips.push({ label: "VARIANT spill", value: data.variant_shredded.spilled_to_disk ? "Yes" : "No" });
+    if (data.proof?.variant_avoided_spill != null) statChips.push({ label: "Spill Avoided", value: data.proof.variant_avoided_spill ? "Yes ✓" : "No", highlight: data.proof.variant_avoided_spill });
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-b border-border">
         <div className="p-6 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-3">
             <Server className="w-4 h-4 text-muted-foreground" />
             <h3 className="font-mono text-sm uppercase tracking-wider text-foreground">
               Spark: <span className="text-primary">STRING vs VARIANT</span>
             </h3>
           </div>
-          <div className="h-48 w-full mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }}
-                  itemStyle={{ color: "hsl(var(--foreground))" }}
-                  formatter={(v: number) => [`${v}s`, "Time"]}
-                  cursor={{ fill: "hsl(var(--muted) / 0.5)" }}
-                />
-                <Bar dataKey="time" fill="hsl(var(--chart-3))" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          {data.proof && (
-            <div className="mt-4 text-xs text-muted-foreground font-mono">
-              Speedup: <span className="text-primary">{data.proof.speedup}x</span>
-              {" | "}Memory savings: <span className="text-primary">{data.proof.memory_savings_mb} MB</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Exec Time</p>
+              <div className="h-36">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}s`} />
+                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }} formatter={(v: number) => [`${v}s`, "Time"]} cursor={{ fill: "hsl(var(--muted) / 0.5)" }} />
+                    <Bar dataKey="time" fill="hsl(var(--chart-3))" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          )}
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Peak Memory</p>
+              <div className="h-36">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={memChartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}`} />
+                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", borderRadius: "4px" }} formatter={(v: number) => [`${v} MB`, "Memory"]} cursor={{ fill: "hsl(var(--muted) / 0.5)" }} />
+                    <Bar dataKey="mem" fill="hsl(var(--chart-5))" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+          {statChips.length > 0 && <StatStrip stats={statChips} />}
         </div>
         <div className="p-6 bg-muted/5">
           <ValidationPanel validation={data.validation} />
