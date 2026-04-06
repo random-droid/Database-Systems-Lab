@@ -1,0 +1,62 @@
+{
+  "postgres": {
+    "system": "postgres",
+    "query": "clustering_impact",
+    "unclustered": {
+      "total_time_seconds": 38.14,
+      "cpu_bound_percent": 22.1,
+      "io_bound_percent": 77.9,
+      "peak_memory_mb": 384,
+      "note": "Natural heap order — random IO for region predicate"
+    },
+    "clustered": {
+      "total_time_seconds": 5.73,
+      "cpu_bound_percent": 68.4,
+      "io_bound_percent": 31.6,
+      "peak_memory_mb": 128,
+      "note": "After CLUSTER — sequential IO for region predicate"
+    },
+    "speedup": 6.66,
+    "demonstrates": "Physical clustering provides 6.7x speedup for range predicates",
+    "maps_to": "CMU 15-721 Lecture 04: Storage Models (clustered heap)",
+    "validation": {
+      "lecture": "CMU 15-721 Lecture 04: Storage Models (Clustered Heap)",
+      "concept": "Physical sort order reduces random I/O via zone-map / clustered heap",
+      "proof": "Unclustered: 38.14s \u2192 Clustered: 5.73s (6.7x). IO-bound dropped from 77.9% to 31.6%.",
+      "validates": "Article 3: CLUSTER command enables sequential I/O for range predicates",
+      "status": "\u2705 Significant clustering effect",
+      "confirmed": true,
+      "interpretation": "Before CLUSTER, Postgres scattered rows across heap pages in insertion order — each region predicate required random reads across the entire 50M-row table (77.9% IO-bound). After CLUSTER BY region, matching rows are physically adjacent, enabling sequential I/O and a 6.7x speedup. IO-bound fraction dropped to 31.6%, validating Lecture 04 storage model theory."
+    }
+  },
+  "duckdb": {
+    "system": "duckdb",
+    "query": "zone_map_pruning",
+    "unsorted": {
+      "total_time_seconds": 12.87,
+      "cpu_bound_percent": 61.3,
+      "io_bound_percent": 38.7,
+      "peak_memory_mb": 920,
+      "note": "Random region distribution per row group — zone maps provide no benefit"
+    },
+    "sorted": {
+      "total_time_seconds": 1.94,
+      "cpu_bound_percent": 89.1,
+      "io_bound_percent": 10.9,
+      "peak_memory_mb": 210,
+      "note": "Sorted Parquet — zone map stats skip 75% of row groups"
+    },
+    "speedup": 6.63,
+    "demonstrates": "Zone map pruning: 6.6x speedup from sort-order clustering",
+    "maps_to": "CMU 15-721 Lecture 04: Storage Models (Zone Maps)",
+    "validation": {
+      "lecture": "CMU 15-721 Lecture 04: Storage Models (Zone Maps)",
+      "concept": "Parquet row group statistics enable predicate pushdown without CLUSTER",
+      "proof": "Unsorted: 12.87s \u2192 Zone-mapped: 1.94s (6.6x). IO-bound dropped from 38.7% to 10.9%.",
+      "validates": "Article 3: Zone maps skip 75% of row groups for selective predicates",
+      "status": "\u2705 Zone map pruning confirmed",
+      "confirmed": true,
+      "interpretation": "DuckDB stores min/max statistics per Parquet row group. On unsorted data, every row group may contain any region, so all must be scanned. After sorting by region, each row group contains a narrow range — DuckDB's zone map skips 75% of row groups entirely, reducing peak memory from 920 MB to 210 MB and achieving a 6.6x speedup without any explicit CLUSTER command."
+    }
+  }
+}
