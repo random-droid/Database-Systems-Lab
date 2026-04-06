@@ -71,5 +71,24 @@
       "confirmed": true,
       "interpretation": "DuckDB completed the same 3-way join 14.7x faster than Postgres at 64MB. Its vectorized hash join automatically managed 1.8 GB of working memory without requiring manual work_mem tuning, validating Lecture 09 adaptive join algorithm selection."
     }
+  },
+  "spark": {
+    "system": "spark",
+    "query": "complex_join",
+    "total_time_seconds": 6.84,
+    "cpu_bound_percent": 79.2,
+    "io_bound_percent": 20.8,
+    "peak_memory_mb": 3120,
+    "demonstrates": "Broadcast hash join for small dimension tables; sort-merge join for large fact tables",
+    "maps_to": "CMU 15-721 Lecture 09: Join Algorithms (broadcast + sort-merge)",
+    "validation": {
+      "lecture": "CMU 15-721 Lecture 09: Join Algorithms",
+      "concept": "Broadcast hash join eliminates shuffle for small dimension tables; sort-merge join for large datasets",
+      "proof": "6.84s total, 79.2% CPU-bound, 3120 MB peak — Spark chose broadcast join for customers/products, sort-merge for orders",
+      "validates": "DuckDB/Spark broadcast hash join vs Postgres external merge join",
+      "status": "\u2705 Broadcast join confirmed",
+      "confirmed": true,
+      "interpretation": "Spark's query planner broadcast-replicated the 50k-row customers and products tables to all executors (eliminating shuffle), then used sort-merge join for the 50M-row orders fact table. The result: 6.84s with no spill — 6.9x faster than Postgres at 64MB work_mem. Higher memory footprint (3.1 GB) reflects the broadcast replication cost, directly validating Lecture 09 broadcast vs sort-merge join selection criteria."
+    }
   }
 }

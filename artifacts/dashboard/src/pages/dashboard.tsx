@@ -585,12 +585,27 @@ export default function Dashboard() {
           
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider mr-2">Available Systems:</span>
-              {status?.availableSystems.map(sys => (
-                <Badge key={sys} variant="outline" className="font-mono text-xs uppercase bg-secondary/50">
-                  {sys}
-                </Badge>
-              )) || <span className="text-xs text-muted-foreground font-mono">Scanning...</span>}
+              <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider mr-2">Systems:</span>
+              {(["postgres", "duckdb", "spark"] as const).map(sys => {
+                const live = status?.availableSystems.includes(sys);
+                return (
+                  <div key={sys} className="flex flex-col items-center gap-0.5">
+                    <Badge
+                      variant="outline"
+                      className={`font-mono text-xs uppercase transition-colors ${
+                        live
+                          ? "text-primary border-primary/60 bg-primary/10 shadow-[0_0_6px_rgba(0,255,255,0.15)]"
+                          : "text-muted-foreground border-muted-foreground/20 bg-muted/20 opacity-50"
+                      }`}
+                    >
+                      {sys}
+                    </Badge>
+                    <span className={`text-[9px] font-mono uppercase tracking-wider ${live ? "text-emerald-500" : "text-muted-foreground/40"}`}>
+                      {status ? (live ? "live" : "offline") : "···"}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
