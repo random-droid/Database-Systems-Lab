@@ -218,17 +218,21 @@ function UseCaseSection({
   useCase, 
   running, 
   runningUseCase, 
+  completedUseCases,
   onRun 
 }: { 
   useCase: typeof USE_CASES[0]; 
   running: boolean; 
   runningUseCase: string | null; 
+  completedUseCases: string[];
   onRun: (id: UseCaseType) => void;
 }) {
+  const hasResults = completedUseCases.includes(useCase.id);
   const { data: results } = useGetBenchmarkResults(useCase.id, { 
     query: { 
-      enabled: true,
-      queryKey: getGetBenchmarkResultsQueryKey(useCase.id)
+      enabled: hasResults,
+      queryKey: getGetBenchmarkResultsQueryKey(useCase.id),
+      retry: false,
     } 
   });
 
@@ -557,6 +561,7 @@ export default function Dashboard() {
               useCase={uc} 
               running={status?.running || false} 
               runningUseCase={status?.runningUseCase || null}
+              completedUseCases={status?.completedUseCases ?? []}
               onRun={handleRun}
             />
           ))}
