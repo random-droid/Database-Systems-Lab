@@ -252,72 +252,72 @@ type UseCaseType = "dashboards" | "complex_joins" | "variant_test" | "clustering
 const USE_CASES: { id: UseCaseType; title: string; description: string; lecture: string; icon: React.ReactNode }[] = [
   {
     id: "dashboards",
-    title: "Sub-second Dashboard Queries",
-    description: "Evaluates vectorized execution capabilities and buffer pool warming effects.",
-    lecture: "Lecture 07: Vectorized Execution",
+    title: "Why does the same query run 6× faster the second time?",
+    description: "Run an aggregation twice on 50M rows — cold then hot. Watch execution time drop as the buffer pool warms up.",
+    lecture: "Lecture 05: Buffer Pool Management",
     icon: <Zap className="w-5 h-5" />
   },
   {
     id: "complex_joins",
-    title: "Complex Analytical Joins",
-    description: "Stress tests external merge sort and memory-bounded join algorithms.",
+    title: "What happens when Postgres runs out of memory during a join?",
+    description: "Force a 4-table join under a tight work_mem budget. Watch Postgres spill to disk and find the temp blocks in EXPLAIN ANALYZE.",
     lecture: "Lecture 06: External Merge Sort",
     icon: <TableIcon className="w-5 h-5" />
   },
   {
     id: "variant_test",
-    title: "VARIANT Shredding Acid Test",
-    description: "Compares raw JSON extraction vs structured shredded columns.",
+    title: "Is parsing embedded JSON really that expensive?",
+    description: "Query one field from a JSON string column vs a VARIANT (shredded) column. Measure memory footprint, disk spill, and latency.",
     lecture: "Lecture 03: PAX Storage",
     icon: <Database className="w-5 h-5" />
   },
   {
     id: "clustering",
-    title: "Clustering & Partitioning Impact",
-    description: "Measures performance speedup from aligned storage models.",
+    title: "Can physical row ordering alone make a query 3× faster?",
+    description: "Run the same range-predicate query on a clustered vs unclustered heap. The only difference is which pages the rows live on.",
     lecture: "Lecture 04: Storage Models",
     icon: <HardDrive className="w-5 h-5" />
   },
   {
     id: "acid_integrity",
-    title: "ACID Integrity & Concurrency Control",
-    description: "Races concurrent writers against Parquet (silent lost update) and Delta Lake (OCC conflict detection + MVCC time travel).",
+    title: "Can you lose 500K rows without getting any error?",
+    description: "Race two concurrent writers on Parquet (no concurrency control) and Delta Lake (OCC). One silently discards data — the other throws an exception.",
     lecture: "Lectures 13–15: OCC / MVCC",
     icon: <ShieldAlert className="w-5 h-5" />
   },
   {
     id: "vectorized_execution",
-    title: "Vectorized Execution & SIMD",
-    description: "Compares DuckDB (1024-tuple SIMD batches) vs NumPy columnar vs Python row-at-a-time Volcano model on a compute-intensive arithmetic aggregation.",
+    title: "Why is DuckDB 25× faster than Python on the same hardware?",
+    description: "Run the same arithmetic aggregation in DuckDB (SIMD batches), NumPy (columnar), and Python (row loop). See exactly where the gap comes from.",
     lecture: "Lectures 10–12: Vectorized Execution",
     icon: <Cpu className="w-5 h-5" />
   },
   {
     id: "compression",
-    title: "Compression Effectiveness",
-    description: "Measures CSV vs Parquet (Snappy/Zstd) file sizes and scan speeds on 10M rows. Demonstrates dictionary encoding, RLE, and bit-packing on low-cardinality columns.",
+    title: "How much does columnar storage actually shrink your data?",
+    description: "Compare CSV, Parquet/Snappy, and Parquet/Zstd on the same 10M rows. Measure file size, scan speed, and what dictionary encoding does to low-cardinality columns.",
     lecture: "Lecture 03: Storage Models & Compression",
     icon: <Archive className="w-5 h-5" />
   },
   {
     id: "window_functions",
-    title: "Window Functions / Analytical Patterns",
-    description: "Benchmarks LAG, LEAD, ROW_NUMBER, RANK, SUM OVER, and AVG OVER on DuckDB (vectorized) vs Python pandas (groupby + merge) vs Postgres (Volcano iterator).",
+    title: "Why are DuckDB window functions so much faster than pandas?",
+    description: "Compute 7 window operations (LAG, LEAD, RANK, ROW_NUMBER, SUM OVER, AVG OVER, delta) in DuckDB vs pandas vs Postgres. DuckDB fuses all 7 into one sorted pass.",
     lecture: "Lecture 11: Advanced Operators (Window Functions)",
     icon: <TrendingUp className="w-5 h-5" />
   },
   {
     id: "query_optimization",
-    title: "Query Optimization / Cost-Based Optimization",
-    description: "Shows how DuckDB's optimizer uses predicate pushdown to prune rows before the hash join. Adds 1 and 2 predicates to the same join query and measures speedup.",
+    title: "Does adding a WHERE clause always make a query faster?",
+    description: "Run a join with 0, 1, and 2 predicates. See how the optimizer's predicate pushdown shrinks the hash table at each step — and by exactly how much.",
     lecture: "Lectures 07–08: Query Optimization",
     icon: <Filter className="w-5 h-5" />
   },
   {
     id: "skew_handling",
-    title: "Skew Handling / Partition Imbalance",
-    description: "Creates a 90% West-skewed dataset vs uniform distribution. Measures aggregation slowdown and shows partition imbalance factor (4.5× more rows in West bucket).",
-    lecture: "Lecture 09: Join Algorithms (Skew) + Lecture 14",
+    title: "What happens when 90% of your data lands in one partition?",
+    description: "Compare a uniform dataset vs one where 90% of rows share the 'West' key. One thread does all the work while the others idle — watch the straggler effect.",
+    lecture: "Lecture 09: Join Algorithms (Skew)",
     icon: <Scale className="w-5 h-5" />
   }
 ];
@@ -399,9 +399,9 @@ function StatsGrid({ validatedCount, total }: { validatedCount: number; total: n
     <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
       {/* Validated count — prominent first card */}
       <div className="col-span-2 md:col-span-2 lg:col-span-1 rounded-xl border border-primary/40 bg-primary/10 shadow-[0_0_20px_rgba(0,255,255,0.12)] p-4 flex flex-col justify-between">
-        <span className="text-[10px] font-mono uppercase tracking-widest text-primary/70 mb-1">Validated</span>
+        <span className="text-[10px] font-mono uppercase tracking-widest text-primary/70 mb-1">Experiments</span>
         <span className="text-4xl font-bold font-mono text-primary leading-none">{validatedCount}<span className="text-xl text-primary/50">/{total}</span></span>
-        <span className="text-[10px] text-muted-foreground mt-2 leading-tight">CMU 15-721 concepts<br/>empirically confirmed</span>
+        <span className="text-[10px] text-muted-foreground mt-2 leading-tight">experiments run<br/>· findings logged</span>
       </div>
       {HEADLINE_STATS.map((s) => (
         <div key={s.label} className={`rounded-xl border ${s.border} ${s.bg} ${s.glow} p-4 flex flex-col justify-between`}>
@@ -660,8 +660,8 @@ function TheoryPrimer({ ucId }: { ucId: string }) {
       >
         <div className="flex items-center gap-2">
           <BookOpen className="w-3.5 h-3.5 text-purple-400" />
-          <span className="text-xs font-semibold text-purple-300 uppercase tracking-wider">Theory Primer</span>
-          <span className="text-[10px] font-mono text-muted-foreground/60 hidden sm:inline">— understand before you run</span>
+          <span className="text-xs font-semibold text-purple-300 uppercase tracking-wider">Before You Run</span>
+          <span className="text-[10px] font-mono text-muted-foreground/60 hidden sm:inline">— what will you find?</span>
         </div>
         <ChevronDown className={`w-3.5 h-3.5 text-purple-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
@@ -686,7 +686,7 @@ function TheoryPrimer({ ucId }: { ucId: string }) {
             </div>
 
             <div>
-              <h5 className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider mb-2">What to look for</h5>
+              <h5 className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider mb-2">What you'll discover</h5>
               <ul className="flex flex-col gap-1.5">
                 {theory.lookFor.map((lf, i) => (
                   <li key={i} className="text-muted-foreground flex gap-2 leading-relaxed">
@@ -760,7 +760,7 @@ function ValidationPanel({ validation }: { validation: ValidationData }) {
       </div>
 
       <div>
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Validates</h4>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">What you proved</h4>
         <p className="text-sm italic text-muted-foreground">{validation.validates}</p>
       </div>
 
@@ -1926,7 +1926,7 @@ function UseCaseSection({
           {isRunningThis ? (
             <><Activity className="w-4 h-4 mr-2 animate-pulse text-primary" /> Running</>
           ) : (
-            <><Play className="w-4 h-4 mr-2" /> Execute</>
+            <><Play className="w-4 h-4 mr-2" /> Run Experiment</>
           )}
         </Button>
       </CardHeader>
@@ -1936,8 +1936,8 @@ function UseCaseSection({
         {!results && !isRunningThis && (
           <div className="p-12 text-center text-muted-foreground flex flex-col items-center justify-center flex-grow opacity-50">
             <Database className="w-12 h-12 mb-4 text-muted" />
-            <p className="font-mono text-sm uppercase tracking-widest">No Telemetry Data</p>
-            <p className="text-xs mt-2 max-w-xs">Execute benchmark to generate validation results.</p>
+            <p className="font-mono text-sm uppercase tracking-widest">Not Run Yet</p>
+            <p className="text-xs mt-2 max-w-xs">Run the experiment to find out.</p>
           </div>
         )}
         {renderCardBody()}
@@ -2014,8 +2014,8 @@ export default function Dashboard() {
               <Activity className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h1 className="font-bold text-lg leading-tight tracking-tight">OLAP Benchmark</h1>
-              <p className="text-xs text-muted-foreground font-mono uppercase tracking-widest">CMU 15-721 Validation</p>
+              <h1 className="font-bold text-lg leading-tight tracking-tight">Database Systems Lab</h1>
+              <p className="text-xs text-muted-foreground font-mono uppercase tracking-widest">Learn by experiment</p>
             </div>
           </div>
           
@@ -2036,7 +2036,7 @@ export default function Dashboard() {
               ) : (
                 <>
                   <Rocket className="w-3.5 h-3.5" />
-                  Run All
+                  Run All Experiments
                 </>
               )}
             </Button>
@@ -2072,10 +2072,10 @@ export default function Dashboard() {
         
         {/* Intro */}
         <section className="max-w-3xl">
-          <h2 className="text-2xl font-bold tracking-tight mb-2">Research Dashboard</h2>
+          <h2 className="text-2xl font-bold tracking-tight mb-2">Database Systems Lab</h2>
           <p className="text-muted-foreground">
-            Live benchmarking cockpit validating theoretical concepts from CMU 15-721 Advanced Database Systems. 
-            Execute workloads against available engines to generate empirical proofs mapped directly to lecture concepts.
+            10 hands-on experiments that reveal how databases actually work. Each experiment poses a real question — 
+            run the workload, find the smoking gun, and understand the WHY. Powered by CMU 15-721 Advanced Database Systems.
           </p>
         </section>
 
