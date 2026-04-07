@@ -1,0 +1,467 @@
+**EXACTLY! You're absolutely right!** 🎯
+
+"Validating the Brochure" is corporate speak. This is about **learning how databases actually work through experimentation.**
+
+---
+
+## **Better Framing:**
+
+### **❌ Lame:**
+- "Validating vendor claims"
+- "Checking if Parquet is really faster"
+- "Testing marketing promises"
+
+### **✅ What You Actually Built:**
+- **"Understanding Database Internals Through Hands-On Experimentation"**
+- **"Learning Why Systems Behave The Way They Do"**
+- **"Discovering The Smoking Guns Yourself"**
+
+---
+
+## **Reframed Page Title & Messaging:**
+
+### **Current (Lame):**
+```
+"OLAP Systems Validation: Theory → Practice"
+Validating claims from CMU 15-721
+```
+
+### **Reframed (Better):**
+```
+"Database Systems Lab: Learn By Doing"
+
+Understand how databases work by running experiments that reveal 
+the mechanisms behind the theory. Every benchmark is a lesson—
+see the concepts in action, find the smoking guns, understand WHY.
+```
+
+---
+
+## **Reframed Theory Cards:**
+
+### **Instead of "What to Look For" → "What You'll Discover"**
+
+```jsx
+<TheoryCard>
+  <Title>Experiment: Concurrency Control</Title>
+  <Subtitle>What happens when two writers collide?</Subtitle>
+  
+  <TheQuestion>
+    <h4>🤔 The Question:</h4>
+    <p>
+      You have two processes trying to write to the same file 
+      simultaneously. What happens?
+    </p>
+  </TheQuestion>
+  
+  <TheExperiment>
+    <h4>🧪 The Experiment:</h4>
+    <ol>
+      <li>Writer A starts modifying 500K rows</li>
+      <li>Writer B starts modifying the SAME 500K rows</li>
+      <li>Both try to commit at the same time</li>
+      <li>Click "Run Experiment" and see what happens</li>
+    </ol>
+  </TheExperiment>
+  
+  <WhatYoullDiscover>
+    <h4>💡 What You'll Discover:</h4>
+    
+    <Discovery type="parquet">
+      <strong>With Parquet (no concurrency control):</strong>
+      <ul>
+        <li>Both writers think they succeeded ✅</li>
+        <li>Check the file → only 500K rows (should be 1M!)</li>
+        <li>No error, no warning, just silent data loss</li>
+        <li><strong>WHY:</strong> File system atomic rename = last writer wins</li>
+      </ul>
+    </Discovery>
+    
+    <Discovery type="delta">
+      <strong>With Delta Lake (OCC enabled):</strong>
+      <ul>
+        <li>Writer B commits successfully ✅</li>
+        <li>Writer A gets: ConcurrentAppendException ❌</li>
+        <li>All data intact (500K rows from B)</li>
+        <li><strong>WHY:</strong> Delta detected version conflict and aborted Writer A</li>
+      </ul>
+    </Discovery>
+  </WhatYoullDiscover>
+  
+  <TheLesson>
+    <h4>📚 The Lesson (CMU 15-721 L14):</h4>
+    <p>
+      This is <strong>Optimistic Concurrency Control (OCC)</strong> in action.
+      Instead of locking the file (slow), Delta Lake:
+    </p>
+    <ol>
+      <li>Lets both writers proceed without blocking</li>
+      <li>Tracks what version each writer started from</li>
+      <li>On commit, validates version hasn't changed</li>
+      <li>If changed → abort transaction (prevents corruption)</li>
+    </ol>
+    <p>
+      <strong>Key insight:</strong> Throwing an exception is a FEATURE, not a bug—
+      it prevents silent data loss!
+    </p>
+  </TheLesson>
+  
+  <TryItYourself>
+    <h4>🎮 Try It Yourself:</h4>
+    <ul>
+      <li>Run the experiment multiple times</li>
+      <li>Watch the execution logs</li>
+      <li>See the exception stack trace</li>
+      <li>Count the final rows</li>
+    </ul>
+  </TryItYourself>
+</TheoryCard>
+```
+
+---
+
+## **Reframed Use Case Titles:**
+
+### **Before (Lame):**
+```
+Use Case 1: Sub-second Dashboard Queries
+Use Case 2: Complex Analytical Joins
+Use Case 5: ACID Integrity Testing
+```
+
+### **After (Better):**
+```
+Experiment 1: Why Does the Second Query Run 6x Faster?
+  → Discover: Buffer pool caching in action
+
+Experiment 2: Watch Postgres Run Out of Memory
+  → Discover: External merge sort spilling to disk
+
+Experiment 5: Can You Lose Data Without an Error?
+  → Discover: Yes! (And how to prevent it)
+```
+
+---
+
+## **Page Structure - Learning Journey:**
+
+```jsx
+<Page>
+  <Hero>
+    <h1>Database Systems Lab</h1>
+    <Tagline>
+      Learn how databases work by breaking them, 
+      fixing them, and understanding WHY.
+    </Tagline>
+    <Subtitle>
+      10 hands-on experiments that reveal the mechanisms 
+      behind CMU 15-721 Advanced Database Systems
+    </Subtitle>
+  </Hero>
+  
+  <HowItWorks>
+    <h2>How This Works:</h2>
+    <Steps>
+      <Step number="1">
+        <Icon>🤔</Icon>
+        <Title>Read the Question</Title>
+        <Description>
+          "What happens when Postgres runs out of memory during a join?"
+        </Description>
+      </Step>
+      
+      <Step number="2">
+        <Icon>🧪</Icon>
+        <Title>Run the Experiment</Title>
+        <Description>
+          Execute a 50M row join with only 64MB of work_mem
+        </Description>
+      </Step>
+      
+      <Step number="3">
+        <Icon>🔍</Icon>
+        <Title>Find the Smoking Gun</Title>
+        <Description>
+          EXPLAIN BUFFERS shows: "temp written=19,204 blocks"
+        </Description>
+      </Step>
+      
+      <Step number="4">
+        <Icon>💡</Icon>
+        <Title>Understand WHY</Title>
+        <Description>
+          This is external merge sort (Lecture 06) - here's how it works...
+        </Description>
+      </Step>
+    </Steps>
+  </HowItWorks>
+  
+  {/* Experiments replace "Use Cases" */}
+  <Experiments>
+    
+    <Experiment id="buffer-pool">
+      <Badge>Experiment 1</Badge>
+      <Question>
+        Why does the exact same query run 6x faster the second time?
+      </Question>
+      
+      <TheoryCard>
+        <h3>The Hypothesis:</h3>
+        <p>
+          Operating systems cache recently accessed disk pages in RAM.
+          First query reads from disk (slow). Second query reads from 
+          cache (fast).
+        </p>
+        
+        <h3>Test It:</h3>
+        <p>
+          Run the same aggregation query twice on 50M rows. 
+          Measure the time difference.
+        </p>
+      </TheoryCard>
+      
+      <RunExperiment>
+        <button>▶ Run Cold Scan</button>
+        <button>▶ Run Hot Scan</button>
+      </RunExperiment>
+      
+      <Results>
+        {/* Your existing metrics/validation panels */}
+      </Results>
+      
+      <DiscoverySection>
+        <h3>🎯 What You Just Discovered:</h3>
+        <ul>
+          <li>Cold scan: 18.3 seconds (disk I/O)</li>
+          <li>Hot scan: 3.1 seconds (RAM cache)</li>
+          <li>Speedup: 5.9x faster!</li>
+        </ul>
+        
+        <h3>Why This Happens (L05: Buffer Pool):</h3>
+        <p>
+          The OS keeps recently accessed pages in the page cache...
+        </p>
+      </DiscoverySection>
+      
+      <GoDeeper>
+        <h4>🧠 Go Deeper:</h4>
+        <ul>
+          <li>Try with different data sizes</li>
+          <li>Clear the cache manually and re-run</li>
+          <li>Compare Postgres vs DuckDB cache behavior</li>
+        </ul>
+      </GoDeeper>
+    </Experiment>
+    
+    <Experiment id="lost-updates">
+      <Badge>Experiment 5</Badge>
+      <Question>
+        Can you lose 500,000 rows without getting an error?
+      </Question>
+      
+      <TheHook>
+        <p>
+          <strong>Spoiler: YES.</strong> And it's scarier than you think.
+        </p>
+      </TheHook>
+      
+      <TheoryCard>
+        <h3>The Setup:</h3>
+        <p>
+          Two processes simultaneously write to the same Parquet file:
+        </p>
+        <ul>
+          <li>Writer A: Adds 500,000 rows</li>
+          <li>Writer B: Adds 500,000 rows</li>
+          <li>Expected: 1,000,000 total rows</li>
+        </ul>
+        
+        <h3>The Question:</h3>
+        <p>What happens when both commit at the same time?</p>
+      </TheoryCard>
+      
+      <RunExperiment>
+        <button>▶ Run Concurrent Writers (Parquet)</button>
+        <button>▶ Run Concurrent Writers (Delta Lake)</button>
+      </RunExperiment>
+      
+      <Results>
+        {/* Your existing results */}
+      </Results>
+      
+      <DiscoverySection>
+        <h3>🎯 What You Just Discovered:</h3>
+        
+        <Discovery type="shocking">
+          <h4>Parquet Result:</h4>
+          <ul>
+            <li>Expected: 1,000,000 rows</li>
+            <li>Actual: 500,000 rows</li>
+            <li>Error message: None ❌</li>
+            <li><strong>500,000 rows vanished silently</strong></li>
+          </ul>
+        </Discovery>
+        
+        <Discovery type="good">
+          <h4>Delta Lake Result:</h4>
+          <ul>
+            <li>Writer B: ✅ Success (500,000 rows)</li>
+            <li>Writer A: ❌ ConcurrentAppendException</li>
+            <li>Total rows: 500,000 (correct!)</li>
+            <li><strong>Conflict detected, data protected</strong></li>
+          </ul>
+        </Discovery>
+      </DiscoverySection>
+      
+      <TheLesson>
+        <h3>💡 Why This Happens:</h3>
+        
+        <h4>Parquet (No Concurrency Control):</h4>
+        <CodeExample>
+          Writer A creates: part-00001.parquet (500K rows)
+          Writer B creates: part-00001.parquet (500K rows)
+          
+          File system: "Two files with same name!"
+          → Atomic rename: Last writer wins
+          → Writer B's file overwrites Writer A's file
+          → No error (atomic rename always succeeds)
+          
+          Result: Silent data loss ❌
+        </CodeExample>
+        
+        <h4>Delta Lake (Optimistic Concurrency Control):</h4>
+        <CodeExample>
+          Writer A reads log → version 1
+          Writer B reads log → version 1
+          
+          Writer B commits:
+          → Writes part-00002.parquet
+          → Updates _delta_log/00002.json
+          → Success! ✅
+          
+          Writer A tries to commit:
+          → Expected version: 2
+          → Current version: 2 (B already committed!)
+          → ConcurrentAppendException ❌
+          → Transaction aborted
+          
+          Result: Conflict detected, no data loss ✅
+        </CodeExample>
+        
+        <h4>The Lesson (CMU 15-721 L13-15):</h4>
+        <p>
+          This is why databases exist! File systems give you durability,
+          but databases give you ACID. Optimistic Concurrency Control
+          (OCC) allows high concurrency while preventing corruption.
+        </p>
+      </TheLesson>
+      
+      <RealWorldImpact>
+        <h3>🌍 Why This Matters:</h3>
+        <p>
+          In production data pipelines, multiple Spark jobs often write
+          to the same location. Without OCC:
+        </p>
+        <ul>
+          <li>ETL job overwrites another ETL job's output</li>
+          <li>No error, no alert</li>
+          <li>Data silently disappears</li>
+          <li>Discovered weeks later in dashboards</li>
+        </ul>
+        <p>
+          This is why lakehouse formats (Delta/Iceberg/Hudi) exist—
+          they add database-level guarantees to data lakes.
+        </p>
+      </RealWorldImpact>
+    </Experiment>
+    
+  </Experiments>
+  
+  <Summary>
+    <h2>What You've Learned:</h2>
+    <p>
+      You didn't just read about database theory—you SAW it in action.
+      Every experiment revealed a mechanism, every smoking gun proved 
+      a concept. This is how you build intuition for database internals.
+    </p>
+  </Summary>
+  
+</Page>
+```
+
+---
+
+## **Updated Messaging Throughout:**
+
+### **Instead of:**
+- "Validates Article X claim"
+- "Proves Lecture Y theory"
+- "Confirms vendor statement Z"
+
+### **Say:**
+- "Discover why this happens"
+- "See the mechanism in action"
+- "Find the smoking gun yourself"
+- "Understand the WHY behind the behavior"
+
+---
+
+## **Call-to-Action Buttons:**
+
+```jsx
+// Instead of:
+<button>Run Benchmark</button>
+
+// Say:
+<button>🧪 Run Experiment</button>
+<button>🔍 Find the Smoking Gun</button>
+<button>💡 See Why This Happens</button>
+```
+
+---
+
+## **Hero Section (Updated):**
+
+```jsx
+<Hero>
+  <h1>Database Systems Lab</h1>
+  <h2>Learn By Breaking Things (Safely)</h2>
+  
+  <Pitch>
+    <p>
+      Textbooks tell you "databases use external merge sort when memory 
+      is exceeded." This lab SHOWS you—watch Postgres spill 19,204 blocks 
+      to disk, understand why it happened, see the CPU/IO breakdown.
+    </p>
+    
+    <p>
+      <strong>Not validation. Discovery.</strong>
+    </p>
+  </Pitch>
+  
+  <Stats>
+    <Stat>
+      <Number>10</Number>
+      <Label>Hands-On Experiments</Label>
+    </Stat>
+    <Stat>
+      <Number>500K</Number>
+      <Label>Rows Lost (You'll See Why)</Label>
+    </Stat>
+    <Stat>
+      <Number>100%</Number>
+      <Label>CMU 15-721 Coverage</Label>
+    </Stat>
+  </Stats>
+  
+  <CTA>
+    <button>🚀 Start Experimenting</button>
+  </CTA>
+</Hero>
+```
+
+---
+
+**This transforms it from "test suite" to "interactive learning lab."** 🧪
+
+Much better, right? Want me to rewrite any specific sections with this experimental/discovery framing? 🎓
