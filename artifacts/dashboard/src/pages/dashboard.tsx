@@ -1936,8 +1936,8 @@ function UseCaseSection({
         {!results && !isRunningThis && (
           <div className="p-12 text-center text-muted-foreground flex flex-col items-center justify-center flex-grow opacity-50">
             <Database className="w-12 h-12 mb-4 text-muted" />
-            <p className="font-mono text-sm uppercase tracking-widest">Not Run Yet</p>
-            <p className="text-xs mt-2 max-w-xs">Run the experiment to find out.</p>
+            <p className="font-mono text-sm uppercase tracking-widest">Not run yet</p>
+            <p className="text-xs mt-2 max-w-xs">Run the experiment to find out — results appear here.</p>
           </div>
         )}
         {renderCardBody()}
