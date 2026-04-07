@@ -414,20 +414,148 @@ function StatsGrid({ validatedCount, total }: { validatedCount: number; total: n
   );
 }
 
+const PLAYLIST = "PLSE8ODhjZXjbEeW_bOCZ8c_nx_Jhoz-GW";
+const yt = (vid: string, idx: number) =>
+  `https://www.youtube.com/watch?v=${vid}&list=${PLAYLIST}&index=${idx}`;
+
+const LECTURE_META: Record<string, {
+  title: string;
+  quote: string;
+  author: string;
+  concepts: string[];
+  url: string;
+}> = {
+  "03": {
+    title: "Storage Models, Data Layout & Formats",
+    quote: "Access patterns should match the storage layout. Columnar storage reads only the columns you need — dictionary encoding and RLE compress repeated values to near-zero.",
+    author: "Pavlo, Lecture 03",
+    concepts: ["PAX (Partition Attributes Across)", "Dictionary encoding", "Run-length encoding (RLE)", "Zone maps / data skipping"],
+    url: yt("z2GhznqtIz0", 3),
+  },
+  "04": {
+    title: "Database Compression",
+    quote: "The goal of compression is to reduce the volume of data the DBMS needs to read from disk — not just to save storage space.",
+    author: "Pavlo, Lecture 04",
+    concepts: ["Columnar compression", "Zone maps / min-max indexes", "Clustered heap files", "Block-level skipping"],
+    url: yt("zyn_T5uragA", 4),
+  },
+  "05": {
+    title: "Memory Management & Buffer Pools",
+    quote: "The DBMS knows more about its own access patterns than the OS ever could. Never surrender buffer pool management to the operating system.",
+    author: "Pavlo, Lecture 05",
+    concepts: ["Buffer pool manager", "LRU / CLOCK page replacement", "Sequential flood avoidance", "Cold vs hot page cache"],
+    url: yt("TjlmNGNx77E", 5),
+  },
+  "06": {
+    title: "External Sorting & Aggregations",
+    quote: "When data doesn't fit in memory, you must spill to disk. External merge sort is the foundation of every out-of-memory algorithm in a DBMS.",
+    author: "Pavlo, Lecture 06",
+    concepts: ["External merge sort", "B-way merge passes", "work_mem pressure", "Temp file spill tracking"],
+    url: yt("0tABbNHUgZo", 6),
+  },
+  "07": {
+    title: "Query Planning & Optimization (Part 1)",
+    quote: "Push predicates as deep as possible into the query plan — apply filters before the build and probe phases of every join.",
+    author: "Pavlo, Lecture 07",
+    concepts: ["Predicate pushdown", "Selectivity estimation", "Cost-based plan search", "Cardinality estimates"],
+    url: yt("YmY_NwaoxNk", 7),
+  },
+  "08": {
+    title: "Query Planning & Optimization (Part 2)",
+    quote: "The optimizer picks the join algorithm based on cardinality estimates. Get those wrong and you choose nested-loop when you should hash-join.",
+    author: "Pavlo, Lecture 08",
+    concepts: ["Join ordering", "Hash join vs nested-loop vs merge join", "Histograms", "Dynamic programming plan enumeration"],
+    url: yt("VqFZyWHGQVM", 8),
+  },
+  "09": {
+    title: "Join Algorithms & Parallel Execution Skew",
+    quote: "Parallel execution is only as fast as the slowest partition. Data skew means one thread does 90% of the work while the others idle.",
+    author: "Pavlo, Lecture 09",
+    concepts: ["Hash partitioning", "Partition imbalance / straggler", "COUNT DISTINCT under skew", "Adaptive Query Execution (AQE)"],
+    url: yt("Vf-N3JzWz0g", 9),
+  },
+  "10": {
+    title: "Sorting, Aggregations & Vectorized Execution",
+    quote: "Process data in vectors of 1024 tuples using SIMD. Never one row at a time — the Volcano iterator model wastes 99% of its cycles on function call overhead.",
+    author: "Pavlo, Lecture 10",
+    concepts: ["Volcano / iterator model", "Vectorized batch execution", "SIMD (AVX-512)", "Column-at-a-time operators"],
+    url: yt("zzqDBSVljsQ", 10),
+  },
+  "11": {
+    title: "Window Functions & Advanced Operators",
+    quote: "The window sort is the same sort — fuse all window functions into a single sorted-partition scan instead of re-sorting for each operator.",
+    author: "Pavlo, Lecture 11",
+    concepts: ["OVER / PARTITION BY", "Operator fusion", "LAG / LEAD / RANK / ROW_NUMBER", "Sort-based window aggregation"],
+    url: yt("GnzsgE4igL4", 11),
+  },
+  "12": {
+    title: "Query Compilation & Code Generation",
+    quote: "Compile queries down to native machine code — eliminate interpretation overhead at every operator boundary.",
+    author: "Pavlo, Lecture 12",
+    concepts: ["Code generation (codegen)", "LLVM JIT compilation", "Pipeline breakers", "Tight inner loops"],
+    url: yt("mcFHZFb1CAo", 12),
+  },
+  "13": {
+    title: "Concurrency Control — OCC & MVCC",
+    quote: "In OCC, transactions proceed without locks. On commit, the system validates that no other transaction modified the same data — if a conflict is detected, abort.",
+    author: "Pavlo, Lectures 13-15",
+    concepts: ["Optimistic Concurrency Control (OCC)", "Multi-Version Concurrency Control (MVCC)", "Lost Update problem", "Snapshot isolation"],
+    url: `https://www.youtube.com/playlist?list=${PLAYLIST}`,
+  },
+};
+
+function getLectureMeta(lectureStr: string) {
+  const m = lectureStr?.match(/\b(\d{2})\b/);
+  if (!m) return null;
+  return LECTURE_META[m[1]] ?? null;
+}
+
 function ValidationPanel({ validation }: { validation: ValidationData }) {
   if (!validation) return null;
+  const meta = getLectureMeta(validation.lecture);
+
   return (
     <div className="flex flex-col gap-4 p-4 bg-muted/30 rounded-md border border-border h-full">
-      <div>
-        <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 mb-2">
+      {/* Lecture badge + watch link */}
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20">
           {validation.lecture}
         </Badge>
+        {meta && (
+          <a
+            href={meta.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] font-mono text-primary/70 hover:text-primary transition-colors shrink-0"
+          >
+            ▶ Watch lecture ↗
+          </a>
+        )}
       </div>
-      
+
+      {/* Pavlo quote */}
+      {meta && (
+        <blockquote className="border-l-2 border-purple-500/40 pl-3 py-0.5">
+          <p className="text-xs italic text-muted-foreground leading-relaxed">"{meta.quote}"</p>
+          <footer className="text-[10px] text-muted-foreground/50 mt-1 font-mono">— {meta.author}</footer>
+        </blockquote>
+      )}
+
       <div>
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Concept</h4>
         <p className="text-sm font-medium">{validation.concept}</p>
       </div>
+
+      {/* Key concepts chips */}
+      {meta && (
+        <div className="flex flex-wrap gap-1">
+          {meta.concepts.map(c => (
+            <span key={c} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300/80 border border-purple-500/15">
+              {c}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="bg-background border border-destructive/50 rounded-md p-3">
         <h4 className="text-xs font-semibold text-destructive uppercase tracking-wider mb-2 flex items-center gap-1">

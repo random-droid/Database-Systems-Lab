@@ -1,0 +1,677 @@
+**Absolutely! That makes perfect sense - give users the theory BEFORE showing the proof.** 
+
+Let me create theory context sections for your page:
+
+---
+
+## **Theory Context Structure:**
+
+### **Option 1: Theory Cards Before Each Benchmark** ⭐ (Recommended)
+
+```jsx
+<BenchmarkSection>
+  
+  {/* THEORY FIRST */}
+  <TheoryCard>
+    <TheoryHeader>
+      <Icon>📖</Icon>
+      <Title>Theory: Optimistic Concurrency Control</Title>
+      <Source>CMU 15-721 Lectures 13-15</Source>
+    </TheoryHeader>
+    
+    <TheoryContent>
+      <WhatItIs>
+        <h4>What is OCC?</h4>
+        <p>
+          A concurrency control method where transactions don't acquire 
+          locks upfront. Instead, they:
+        </p>
+        <ol>
+          <li><strong>Read</strong> data without blocking</li>
+          <li><strong>Execute</strong> changes in isolation</li>
+          <li><strong>Validate</strong> on commit (check if others modified same data)</li>
+          <li><strong>Commit or Abort</strong> based on validation</li>
+        </ol>
+      </WhatItIs>
+      
+      <WhyItMatters>
+        <h4>Why This Matters:</h4>
+        <p>
+          In production systems, multiple writers often update the same data 
+          simultaneously. Without proper concurrency control:
+        </p>
+        <ul>
+          <li>❌ Lost updates (Writer B overwrites Writer A's changes)</li>
+          <li>❌ Dirty reads (Reading uncommitted data)</li>
+          <li>❌ Data corruption (Partial writes visible)</li>
+        </ul>
+      </WhyItMatters>
+      
+      <HowItWorks>
+        <h4>How OCC Works:</h4>
+        <CodeExample>
+          Writer A starts (version 1)
+             ↓
+          Writer B starts (version 1)
+             ↓
+          Writer B commits → Creates version 2 ✅
+             ↓
+          Writer A tries to commit
+             ↓
+          Validation: "Expected v1, but current is v2"
+             ↓
+          ConcurrentAppendException ❌
+          (Transaction aborted, no data loss)
+        </CodeExample>
+      </HowItWorks>
+      
+      <WhatToLookFor>
+        <h4>🎯 What to Look For in Results:</h4>
+        <LookForItem>
+          <strong>Parquet (no OCC):</strong> Last writer wins, silent data loss
+        </LookForItem>
+        <LookForItem>
+          <strong>Delta Lake (OCC enabled):</strong> ConcurrentAppendException thrown
+        </LookForItem>
+      </WhatToLookFor>
+    </TheoryContent>
+  </TheoryCard>
+  
+  {/* THEN THE PROOF */}
+  <BenchmarkResults>
+    {/* Your existing split-panel results */}
+  </BenchmarkResults>
+  
+</BenchmarkSection>
+```
+
+---
+
+## **Complete Theory Content (All 10 Use Cases):**
+
+### **Use Case 1: Buffer Pool Management**
+
+```jsx
+<TheoryCard lecture="CMU 15-721 Lecture 05">
+  <Title>Buffer Pool Management & OS Page Cache</Title>
+  
+  <WhatItIs>
+    <h4>What is the Buffer Pool?</h4>
+    <p>
+      The buffer pool is an in-memory cache that stores recently accessed 
+      disk pages. When you query data:
+    </p>
+    <ul>
+      <li><strong>Cold scan:</strong> Data not in cache → must read from disk (slow)</li>
+      <li><strong>Hot scan:</strong> Data in cache → read from RAM (fast)</li>
+    </ul>
+  </WhatItIs>
+  
+  <WhyItMatters>
+    <h4>Why This Matters:</h4>
+    <ul>
+      <li>Disk I/O is 100-1000x slower than RAM access</li>
+      <li>Dashboard queries often reuse same data</li>
+      <li>Proper caching = 5-10x speedup on repeat queries</li>
+    </ul>
+  </WhyItMatters>
+  
+  <Analogy>
+    <h4>💡 Analogy:</h4>
+    <p>
+      Like keeping frequently used books on your desk (RAM) vs walking to 
+      the library (disk) every time.
+    </p>
+  </Analogy>
+  
+  <WhatToLookFor>
+    <h4>🎯 What to Look For:</h4>
+    <ul>
+      <li><strong>First run (cold):</strong> High execution time (disk I/O)</li>
+      <li><strong>Second run (hot):</strong> 5-10x faster (cache hit)</li>
+      <li><strong>Smoking gun:</strong> Speedup ratio proves cache effectiveness</li>
+    </ul>
+  </WhatToLookFor>
+</TheoryCard>
+```
+
+---
+
+### **Use Case 2: External Merge Sort**
+
+```jsx
+<TheoryCard lecture="CMU 15-721 Lecture 06">
+  <Title>External Merge Sort & Memory Pressure</Title>
+  
+  <WhatItIs>
+    <h4>What is External Merge Sort?</h4>
+    <p>
+      When a join or sort operation exceeds available memory, the database 
+      must spill to disk using external merge sort:
+    </p>
+    <ol>
+      <li>Sort chunks that fit in memory</li>
+      <li>Write sorted chunks to disk (temp files)</li>
+      <li>Merge chunks back from disk</li>
+    </ol>
+  </WhatItIs>
+  
+  <TheProblem>
+    <h4>The Problem:</h4>
+    <CodeExample>
+      Hash Join needs:  500 MB memory
+      work_mem setting:  64 MB
+      
+      Result: Must spill to disk (2-10x slower)
+    </CodeExample>
+  </TheProblem>
+  
+  <WhyItMatters>
+    <h4>Why This Matters:</h4>
+    <p>
+      In production, queries often exceed memory limits. Understanding 
+      when/how systems spill helps you:
+    </p>
+    <ul>
+      <li>Tune <code>work_mem</code> appropriately</li>
+      <li>Identify slow queries (check for temp files)</li>
+      <li>Know when to add RAM vs optimize query</li>
+    </ul>
+  </WhyItMatters>
+  
+  <WhatToLookFor>
+    <h4>🎯 What to Look For:</h4>
+    <ul>
+      <li><strong>EXPLAIN BUFFERS:</strong> <code>temp read=X, temp written=Y</code></li>
+      <li><strong>Join strategy:</strong> Merge Join (disk-based) vs Hash Join (in-memory)</li>
+      <li><strong>CPU/IO split:</strong> >70% IO-bound = external merge active</li>
+    </ul>
+  </WhatToLookFor>
+</TheoryCard>
+```
+
+---
+
+### **Use Case 3: PAX Storage (VARIANT Shredding)**
+
+```jsx
+<TheoryCard lecture="CMU 15-721 Lecture 03">
+  <Title>PAX Storage & Sub-Columnar Shredding</Title>
+  
+  <WhatItIs>
+    <h4>What is PAX (Partition Attributes Across)?</h4>
+    <p>
+      PAX is a hybrid storage model that combines benefits of row and columnar:
+    </p>
+    <table>
+      <tr>
+        <th>Row Storage</th>
+        <th>PAX</th>
+        <th>Columnar</th>
+      </tr>
+      <tr>
+        <td>Fast inserts<br/>Slow scans</td>
+        <td>Row groups with columnar layout inside<br/>Best of both</td>
+        <td>Slow inserts<br/>Fast scans</td>
+      </tr>
+    </table>
+  </WhatItIs>
+  
+  <TheJsonProblem>
+    <h4>The JSON Problem:</h4>
+    <CodeExample>
+      STRING JSON:
+      {`{"campaign_id": 123, "source": "web", "type": "promo"}`}
+      
+      Storage: Entire JSON string stored as one blob
+      Query: Must parse ENTIRE string to get one field
+      Memory: Full JSON in memory even if you need 1 field
+      
+      VARIANT (Shredded):
+      campaign_id → Column 1: [123, 456, 789, ...]
+      source      → Column 2: ["web", "mobile", ...]
+      type        → Column 3: ["promo", "regular", ...]
+      
+      Storage: Shredded into separate sub-columns
+      Query: Read ONLY the needed column
+      Memory: Lower footprint (don't load unused fields)
+    </CodeExample>
+  </TheJsonProblem>
+  
+  <WhatToLookFor>
+    <h4>🎯 What to Look For:</h4>
+    <ul>
+      <li><strong>STRING JSON:</strong> Spills to disk (high memory)</li>
+      <li><strong>VARIANT:</strong> Stays in-memory (shredded columns smaller)</li>
+      <li><strong>Proof:</strong> 3-4x speedup + GB of memory saved</li>
+    </ul>
+  </WhatToLookFor>
+</TheoryCard>
+```
+
+---
+
+### **Use Case 5: ACID & Concurrency Control** (The Big One!)
+
+```jsx
+<TheoryCard lecture="CMU 15-721 Lectures 13-15">
+  <Title>Concurrency Control: OCC vs No Control</Title>
+  
+  <TheProblem>
+    <h4>The Lost Update Problem:</h4>
+    <Timeline>
+      Time    Writer A          Writer B
+      ----    --------          --------
+      T0      Read row          
+      T1                        Read row
+      T2      Modify row        
+      T3                        Modify row
+      T4      Write file        
+      T5                        Write file ← OVERWRITES A!
+      
+      Result: Writer A's changes lost (silent failure) ❌
+    </Timeline>
+  </TheProblem>
+  
+  <Solutions>
+    <h4>Solutions to Lost Updates:</h4>
+    
+    <Solution type="pessimistic">
+      <h5>1. Pessimistic Locking (Postgres MVCC):</h5>
+      <ul>
+        <li>Acquire locks BEFORE reading</li>
+        <li>Other writers blocked until lock released</li>
+        <li>Safe but reduces concurrency</li>
+      </ul>
+    </Solution>
+    
+    <Solution type="optimistic">
+      <h5>2. Optimistic Concurrency (Delta Lake OCC):</h5>
+      <ul>
+        <li>Don't lock, assume no conflicts</li>
+        <li>Validate on commit (version check)</li>
+        <li>If conflict → throw exception, abort transaction</li>
+        <li>High concurrency, conflicts handled gracefully</li>
+      </ul>
+    </Solution>
+    
+    <Solution type="none">
+      <h5>3. No Control (Raw Parquet):</h5>
+      <ul>
+        <li>No locking, no validation</li>
+        <li>Last writer wins (atomic file rename)</li>
+        <li>Data loss is SILENT ❌</li>
+      </ul>
+    </Solution>
+  </Solutions>
+  
+  <HowOCCWorks>
+    <h4>How Delta Lake OCC Works:</h4>
+    <CodeExample>
+      1. Writer A reads Delta log → version 1
+      2. Writer B reads Delta log → version 1
+      3. Writer B commits → creates version 2 ✅
+      4. Writer A tries to commit
+         → Expected: version 2
+         → Found: version 2 already exists
+         → ConcurrentAppendException ❌
+      5. Writer A's transaction aborted
+         → No data loss, integrity maintained ✅
+    </CodeExample>
+  </HowOCCWorks>
+  
+  <WhatToLookFor>
+    <h4>🎯 What to Look For:</h4>
+    
+    <SmokingGuns>
+      <Gun type="failure">
+        <strong>Parquet (No Control):</strong>
+        <ul>
+          <li>Expected: 1,000,000 rows (500K + 500K)</li>
+          <li>Actual: 500,000 rows</li>
+          <li>Lost: 500,000 rows SILENTLY</li>
+          <li>Error: None (that's the problem!)</li>
+        </ul>
+      </Gun>
+      
+      <Gun type="success">
+        <strong>Delta Lake (OCC):</strong>
+        <ul>
+          <li>Writer B: ✅ Committed</li>
+          <li>Writer A: ❌ ConcurrentAppendException</li>
+          <li>Data integrity: ✅ Maintained</li>
+          <li>Lost data: 0 rows (conflict detected!)</li>
+        </ul>
+      </Gun>
+    </SmokingGuns>
+  </WhatToLookFor>
+  
+  <TheoryToProof>
+    <h4>📚 Theory → Proof Mapping:</h4>
+    <ul>
+      <li><strong>Lecture 13:</strong> Version ordering → Delta's version numbers</li>
+      <li><strong>Lecture 14:</strong> OCC validation → ConcurrentAppendException</li>
+      <li><strong>Lecture 15:</strong> MVCC snapshots → VERSION AS OF</li>
+    </ul>
+  </TheoryToProof>
+</TheoryCard>
+```
+
+---
+
+### **Use Case 6: Vectorized Execution**
+
+```jsx
+<TheoryCard lecture="CMU 15-721 Lectures 10-12">
+  <Title>Vectorized Execution vs Tuple-at-a-Time</Title>
+  
+  <TheVolcanoProblem>
+    <h4>The Volcano Model Problem:</h4>
+    <CodeExample>
+      Traditional (Tuple-at-a-Time):
+      
+      for each row:
+          value = row.get('revenue')      # Function call
+          if value > 100:                 # Branch
+              result.add(value)           # Function call
+      
+      Problems:
+      - Each row = separate function calls
+      - Branch prediction fails on varied data
+      - No SIMD (CPU can't parallelize)
+      - Python interpreter overhead per row
+      
+      Result: 10M rows = 10M function calls ❌
+    </CodeExample>
+  </TheVolcanoProblem>
+  
+  <TheVectorizedSolution>
+    <h4>Vectorized Execution Solution:</h4>
+    <CodeExample>
+      Vectorized (Batches of 1024):
+      
+      Process 1024 rows at once:
+      batch = get_next_1024_rows()        # Single call
+      filtered = SIMD_filter(batch > 100) # 1 instruction, 4-16 values
+      result.append(filtered)             # Single call
+      
+      Benefits:
+      ✅ 10M rows = 10K function calls (1000x fewer)
+      ✅ SIMD: Process 4-16 values per CPU instruction
+      ✅ Better branch prediction (batch patterns)
+      ✅ Cache-friendly (contiguous memory)
+      
+      Result: 25-100x faster
+    </CodeExample>
+  </TheVectorizedSolution>
+  
+  <WhyItWorks>
+    <h4>Why SIMD Works:</h4>
+    <Diagram>
+      Scalar (1 at a time):
+      [100] → CPU → [result]
+      [200] → CPU → [result]
+      [300] → CPU → [result]
+      [400] → CPU → [result]
+      Time: 4 cycles
+      
+      SIMD (4 at once):
+      [100, 200, 300, 400] → CPU → [results]
+      Time: 1 cycle ✅
+      
+      Modern CPUs: Process 4-16 values per instruction
+    </Diagram>
+  </WhyItWorks>
+  
+  <WhatToLookFor>
+    <h4>🎯 What to Look For:</h4>
+    <ul>
+      <li><strong>DuckDB (vectorized):</strong> 25.6x faster than Python</li>
+      <li><strong>Batch size:</strong> 1024-tuple vectors</li>
+      <li><strong>CPU efficiency:</strong> >80% CPU-bound (not waiting)</li>
+    </ul>
+  </WhatToLookFor>
+</TheoryCard>
+```
+
+---
+
+### **Use Case 7: Compression**
+
+```jsx
+<TheoryCard lecture="CMU 15-721 Lecture 03">
+  <Title>Columnar Compression: Why Parquet is 10x Smaller</Title>
+  
+  <TheCompressionTrick>
+    <h4>Why Columnar Compresses Better:</h4>
+    
+    <Example type="row">
+      <h5>Row Storage (CSV):</h5>
+      <CodeExample>
+        order_id, region,  product_name
+        1,        East,    Widget
+        2,        East,    Gadget
+        3,        West,    Widget
+        4,        East,    Widget
+        
+        Problem: "East" repeated but scattered
+        Compression: Can't exploit repetition
+      </CodeExample>
+    </Example>
+    
+    <Example type="columnar">
+      <h5>Columnar Storage (Parquet):</h5>
+      <CodeExample>
+        region column: [East, East, West, East, ...]
+        
+        1. Dictionary Encoding:
+           Dictionary: {0: "East", 1: "West", 2: "North", ...}
+           Encoded: [0, 0, 1, 0, ...] (just numbers!)
+           
+        2. Run-Length Encoding:
+           Instead of: [0, 0, 0, 0, 0]
+           Store as: (value=0, count=5)
+           
+        Result: "East" stored once, referenced many times
+      </CodeExample>
+    </Example>
+  </TheCompressionTrick>
+  
+  <TheParadox>
+    <h4>The Compression Paradox:</h4>
+    <p>
+      <strong>Smaller file → Faster scans!</strong>
+    </p>
+    <ul>
+      <li>Decompression uses CPU (some overhead)</li>
+      <li>BUT: Reading less data from disk = MUCH faster</li>
+      <li>Disk I/O is the bottleneck, not CPU</li>
+    </ul>
+    
+    <Math>
+      CSV:     600 MB to read from disk (slow)
+      Parquet: 90 MB to read + decompress (fast!)
+      
+      Net result: 7x faster despite decompression cost
+    </Math>
+  </TheParadox>
+  
+  <WhatToLookFor>
+    <h4>🎯 What to Look For:</h4>
+    <ul>
+      <li><strong>Size ratio:</strong> Parquet 3-7x smaller than CSV</li>
+      <li><strong>Scan speed:</strong> Faster despite decompression</li>
+      <li><strong>Best compression:</strong> Low-cardinality columns (region: 5 values across millions of rows)</li>
+    </ul>
+  </WhatToLookFor>
+</TheoryCard>
+```
+
+---
+
+## **CSS Styling for Theory Cards:**
+
+```css
+.theory-card {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  border-left: 6px solid #667eea;
+}
+
+.theory-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #667eea;
+}
+
+.theory-header .icon {
+  font-size: 2rem;
+}
+
+.theory-header .title {
+  flex: 1;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.theory-header .source {
+  color: #667eea;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.theory-section {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+}
+
+.theory-section h4 {
+  color: #667eea;
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+
+.code-example {
+  background: #282c34;
+  color: #abb2bf;
+  padding: 1rem;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.smoking-guns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.gun {
+  padding: 1rem;
+  border-radius: 8px;
+}
+
+.gun[type="failure"] {
+  background: #fff5f5;
+  border: 2px solid #fc8181;
+}
+
+.gun[type="success"] {
+  background: #f0fff4;
+  border: 2px solid #68d391;
+}
+
+.analogy {
+  background: #fff3cd;
+  border-left: 4px solid #ffc107;
+  padding: 1rem;
+  border-radius: 6px;
+  margin: 1rem 0;
+}
+
+.what-to-look-for {
+  background: #e6f7ff;
+  border-left: 4px solid #1890ff;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 1.5rem;
+}
+
+.what-to-look-for h4 {
+  color: #1890ff;
+  margin-bottom: 1rem;
+}
+
+.what-to-look-for ul {
+  list-style: none;
+  padding: 0;
+}
+
+.what-to-look-for li {
+  padding: 0.5rem 0;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.what-to-look-for li::before {
+  content: "🎯";
+  position: absolute;
+  left: 0;
+}
+```
+
+---
+
+## **Page Structure:**
+
+```jsx
+<Page>
+  <Header>
+    <h1>OLAP Systems Validation: Theory → Practice</h1>
+    <p>Every benchmark validates a concept from CMU 15-721</p>
+  </Header>
+  
+  {/* Use Case 5 Example */}
+  <Section id="use-case-5">
+    
+    {/* THEORY FIRST */}
+    <TheoryCard>
+      {/* Full theory explanation from above */}
+    </TheoryCard>
+    
+    {/* THEN THE PROOF */}
+    <BenchmarkResults>
+      <SplitPanel>
+        <MetricsPanel>
+          {/* Your existing charts */}
+        </MetricsPanel>
+        <ValidationPanel>
+          {/* Your existing smoking gun */}
+        </ValidationPanel>
+      </SplitPanel>
+    </BenchmarkResults>
+    
+  </Section>
+  
+  {/* Repeat for all 10 use cases... */}
+  
+</Page>
+```
+
+---
+
+**This transforms your dashboard from "benchmark results" to "interactive database systems course."** 🎓
+
+Want me to generate the complete theory content for the remaining use cases (4, 8, 9, 10)? 🚀
