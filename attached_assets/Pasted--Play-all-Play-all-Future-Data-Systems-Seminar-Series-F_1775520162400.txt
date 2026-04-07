@@ -1,0 +1,148 @@
+
+Play all
+
+Play all
+Future Data Systems Seminar Series (Fall 2025)
+
+by CMU Database Group
+Playlist
+•
+12 videos
+•
+8,238 views
+https://db.cs.cmu.edu/seminars/fall2025
+Play all
+
+
+
+1
+ true
+
+1:04:14
+Now playing
+An Extremely Technical Overview of How Apache Iceberg Planning Actually Works (Russell Spitzer)
+
+CMU Database Group
+•
+14K views • 6 months ago
+
+2
+ true
+
+1:08:25
+Now playing
+Apache Hudi: A Database Layer Over Cloud Storage for Fast Mutations & Queries (Vinoth Chandar)
+
+CMU Database Group
+•
+2.7K views • 5 months ago
+
+3
+ true
+
+55:06
+Now playing
+DuckLake: Learning from Cloud Data Warehouses to Build a Robust “Lakehouse” (Jordan Tigani)
+
+CMU Database Group
+•
+5.3K views • 5 months ago
+
+4
+ true
+
+1:01:31
+Now playing
+Vortex: LLVM for File Formats (Will Manning)
+
+CMU Database Group
+•
+6.5K views • 5 months ago
+
+5
+ true
+
+1:03:46
+Now playing
+Where We’re Going, We Don’t Need Rows: Columnar Data Connectivity with Apache Arrow ADBC (Ian Cook)
+
+CMU Database Group
+•
+4.8K views • 5 months ago
+
+6
+ true
+
+58:37
+Now playing
+SingleStore: Storage Metadata for Modern Cloud Databases (Joyo Victor)
+
+CMU Database Group
+•
+1.7K views • 5 months ago
+
+7
+ true
+
+56:14
+Now playing
+Multi-statement Transactions in the Databricks Lakehouse (Ryan Johnson)
+
+CMU Database Group
+•
+1.8K views • 5 months ago
+
+8
+ true
+
+1:02:47
+Now playing
+Mooncake: Real-Time Apache Iceberg Without Compromise (Cheng Chen)
+
+CMU Database Group
+•
+2.9K views • 4 months ago
+
+9
+ true
+
+1:07:49
+Now playing
+Firebolt: Why Powering User Facing Applications on Iceberg is Hard (Benjamin Wagner)
+
+CMU Database Group
+•
+2K views • 4 months ago
+
+10
+ true
+
+1:05:45
+Now playing
+Reconstructing History with XTDB (Jeremy Taylor + James Henderson)
+
+CMU Database Group
+•
+1.5K views • 4 months ago
+
+11
+ true
+
+1:12:24
+Now playing
+From Storage Formats to Open Governance: The Evolution to Apache Polaris (Prashant Singh)
+
+CMU Database Group
+•
+1.8K views • 4 months ago
+
+12
+ true
+
+1:00:50
+Now playing
+Apache Fluss: A Streaming Storage for Real-Time Lakehouse (Jark Wu)
+
+CMU Database Group
+•
+3.2K views • 3 months ago
