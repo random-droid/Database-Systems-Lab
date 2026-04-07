@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2, ShieldAlert, Cpu, Archive, TrendingUp, Filter, Scale, Sparkles, Rocket } from "lucide-react";
+import { Activity, Play, TerminalSquare, Database, Server, Table as TableIcon, Zap, HardDrive, CheckCircle2, ShieldAlert, Cpu, Archive, TrendingUp, Filter, Scale, Sparkles, Rocket, BookOpen, ChevronDown } from "lucide-react";
 
 interface ValidationData {
   lecture: string;
@@ -508,6 +508,199 @@ function getLectureMeta(lectureStr: string) {
   const m = lectureStr?.match(/\b(\d{2})\b/);
   if (!m) return null;
   return LECTURE_META[m[1]] ?? null;
+}
+
+const THEORY_PRIMERS: Record<string, {
+  what: string;
+  why: string[];
+  lookFor: string[];
+}> = {
+  "dashboards": {
+    what: "The buffer pool is an in-memory cache of recently-accessed disk pages. A \"cold\" query reads from disk; a \"hot\" query hits RAM — 100–1000× faster. DBMSs outperform the OS page cache because they know their own access patterns.",
+    why: [
+      "Disk I/O is the #1 bottleneck in analytical queries",
+      "Dashboard workloads repeat the same scans — cache multiplies the gain",
+      "PostgreSQL's shared_buffers + OS page cache = two-tier warm-up",
+    ],
+    lookFor: [
+      "Cold run: high execution time (IO-bound, disk reads dominate)",
+      "Hot run: 5–10× faster (buffer pool hit, CPU-bound)",
+      "CPU/IO split flips from IO-heavy → CPU-heavy on hot scan",
+    ],
+  },
+  "complex_joins": {
+    what: "When a join or sort exceeds work_mem, Postgres spills sorted chunks to disk using external merge sort — then re-reads and merges them. Every extra merge pass doubles the cost.",
+    why: [
+      "External merge sort is 2–10× slower than in-memory hash join",
+      "work_mem controls the spill threshold per plan node",
+      "EXPLAIN (BUFFERS) exposes temp blocks written/read as the smoking gun",
+    ],
+    lookFor: [
+      "EXPLAIN ANALYZE: 'Buffers: temp read=N written=N' lines",
+      "Join type degrades from Hash Join → Merge Join under low work_mem",
+      "IO-dominant CPU split when spilling is active",
+    ],
+  },
+  "variant_test": {
+    what: "PAX (Partition Attributes Across) shreds semi-structured data into typed sub-columns. Querying one JSON field via VARIANT reads only that column — not the entire serialized blob.",
+    why: [
+      "Parsing a full JSON string per row is CPU-expensive and allocation-heavy",
+      "Full JSON is loaded into memory even when you only need one key",
+      "Shredded columns are typed, smaller, and compression-friendly",
+    ],
+    lookFor: [
+      "STRING JSON → disk_spill_bytes > 0 (memory overflows on large scans)",
+      "VARIANT → disk_spill_bytes = 0 and lower latency",
+      "Memory savings in MB reveal the true footprint difference",
+    ],
+  },
+  "clustering": {
+    what: "A clustered index physically co-locates rows with the same key on the same disk pages, turning random I/O (one seek per row) into sequential I/O (one page = many rows).",
+    why: [
+      "Random I/O requires a separate disk seek per matching row",
+      "Sequential I/O reads entire pages at once — 10–100× more efficient",
+      "Zone maps + min-max indexes become effective only when data is clustered",
+    ],
+    lookFor: [
+      "Unclustered: high total_time (random seeks across the heap)",
+      "Clustered: 3–7× speedup on range-predicate scans",
+      "Buffer pool hit rate improves — same pages reused across rows",
+    ],
+  },
+  "acid_integrity": {
+    what: "Optimistic Concurrency Control (OCC) lets writers proceed without locks, then validates on commit. If two writers touched the same version, one is aborted — no silent data loss. Parquet has no such layer; the last write wins and discards the other.",
+    why: [
+      "Without concurrency control, concurrent writes cause Lost Updates",
+      "Parquet uses atomic file rename — no transaction log or version check",
+      "Delta Lake maintains a versioned transaction log; OCC validates against it",
+    ],
+    lookFor: [
+      "Parquet: actual_rows < expected_rows (500K rows silently erased)",
+      "Delta: ConcurrentAppendException thrown (conflict detected, integrity preserved)",
+      "Delta: 0 rows lost — one writer commits, the other aborts cleanly",
+    ],
+  },
+  "vectorized_execution": {
+    what: "Vectorized execution processes 1024-row batches using SIMD CPU instructions. The Volcano (iterator) model calls next() once per row — 10M rows = 10M function calls, no SIMD, no cache locality.",
+    why: [
+      "SIMD processes 4–16 values per CPU clock cycle in one instruction",
+      "1000× fewer function calls vs row-at-a-time iteration",
+      "Contiguous columnar memory = CPU prefetcher works effectively",
+    ],
+    lookFor: [
+      "DuckDB (vectorized): 25× faster than Python scalar loop on same hardware",
+      "CPU-bound execution: >80% CPU share (not waiting for I/O)",
+      "Rows/sec metric shows raw throughput — scale it to 50M rows",
+    ],
+  },
+  "compression": {
+    what: "Columnar formats apply dictionary encoding, RLE, and bit-packing per column. Parquet/Zstd can be 6× smaller than CSV — meaning 6× less data to read off disk before the query even starts.",
+    why: [
+      "Reading less data from disk beats decompressing in RAM every time",
+      "Dictionary encoding: 5 region strings → 3-bit integers, 90%+ size reduction",
+      "Zone maps skip entire row-groups that can't contain matching values",
+    ],
+    lookFor: [
+      "File size: CSV 597MB → Parquet/Zstd 90MB (6.66×)",
+      "Scan speedup: 5–7× despite decompression overhead",
+      "Parquet/Zstd vs Parquet/Snappy: smaller file ≠ always faster scan",
+    ],
+  },
+  "window_functions": {
+    what: "Window functions (LAG, LEAD, RANK, SUM OVER) require a sorted partition scan. DuckDB fuses all 7 operators into a single sorted pass; pandas re-sorts per groupby+merge, paying the O(N log N) cost N times.",
+    why: [
+      "Multiple window ops sharing a partition share one sort — operator fusion",
+      "Re-sorting N times = O(N log N × num_functions) instead of O(N log N)",
+      "Vectorized hash aggregation avoids materializing intermediate frames",
+    ],
+    lookFor: [
+      "DuckDB execution model: 'vectorized (bounded hash agg + sorted partition)'",
+      "All 7 window ops complete in a single scan pass",
+      "Rows/sec comparison — scale to 50M rows for real-world significance",
+    ],
+  },
+  "query_optimization": {
+    what: "Cost-based optimizers push predicates (WHERE filters) as deep into the plan as possible — before joins — using cardinality estimates. A 2% selectivity filter eliminates 98% of rows before the hash table is built.",
+    why: [
+      "Predicate pushdown shrinks the build-side of every downstream join",
+      "Correct cardinality estimates → correct join algorithm chosen (HASH_JOIN)",
+      "Each additional predicate compounds: 20% → 2% selectivity cuts rows 10×",
+    ],
+    lookFor: [
+      "No filter → 1 predicate: ~1.27× speedup (20% selectivity, 80% rows remain)",
+      "1 predicate → 2 predicates: ~1.57× cumulative speedup (2% selectivity)",
+      "EXPLAIN output: verify HASH_JOIN selected in all three scenarios",
+    ],
+  },
+  "skew_handling": {
+    what: "Parallel execution splits data into partitions by hash key. If 90% of rows share one key ('West'), one thread processes 9M rows while others idle on 250K — a 4.5× load imbalance that caps parallel speedup at the straggler's rate.",
+    why: [
+      "Amdahl's Law: speedup = 1 / fraction_on_slowest_thread",
+      "COUNT DISTINCT is worst-case: each partition maintains its own hash set",
+      "Spark AQE detects oversized partitions at runtime and splits them",
+    ],
+    lookFor: [
+      "Imbalance factor: West partition = 4.5× expected uniform size",
+      "Heavy aggregations (GROUP BY + COUNT DISTINCT) show maximum slowdown",
+      "Uniform vs skewed wall-clock time reveals the true straggler cost",
+    ],
+  },
+};
+
+function TheoryPrimer({ ucId }: { ucId: string }) {
+  const [open, setOpen] = useState(false);
+  const theory = THEORY_PRIMERS[ucId];
+  if (!theory) return null;
+
+  return (
+    <div className="border-b border-border bg-purple-500/5">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-purple-500/8 transition-colors group"
+      >
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-3.5 h-3.5 text-purple-400" />
+          <span className="text-xs font-semibold text-purple-300 uppercase tracking-wider">Theory Primer</span>
+          <span className="text-[10px] font-mono text-muted-foreground/60 hidden sm:inline">— understand before you run</span>
+        </div>
+        <ChevronDown className={`w-3.5 h-3.5 text-purple-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-5 flex flex-col gap-4 text-xs">
+          <p className="text-muted-foreground leading-relaxed border-l-2 border-purple-500/30 pl-3">
+            {theory.what}
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <h5 className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider mb-2">Why it matters</h5>
+              <ul className="flex flex-col gap-1.5">
+                {theory.why.map((w, i) => (
+                  <li key={i} className="text-muted-foreground flex gap-2 leading-relaxed">
+                    <span className="text-amber-400/70 shrink-0 mt-0.5">▸</span>
+                    <span>{w}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <h5 className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider mb-2">What to look for</h5>
+              <ul className="flex flex-col gap-1.5">
+                {theory.lookFor.map((lf, i) => (
+                  <li key={i} className="text-muted-foreground flex gap-2 leading-relaxed">
+                    <span className="text-emerald-400/70 shrink-0 mt-0.5">→</span>
+                    <span>{lf}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ValidationPanel({ validation }: { validation: ValidationData }) {
@@ -1739,6 +1932,7 @@ function UseCaseSection({
       </CardHeader>
 
       <CardContent className="p-0 flex-grow flex flex-col">
+        <TheoryPrimer ucId={useCase.id} />
         {!results && !isRunningThis && (
           <div className="p-12 text-center text-muted-foreground flex flex-col items-center justify-center flex-grow opacity-50">
             <Database className="w-12 h-12 mb-4 text-muted" />
