@@ -1,0 +1,197 @@
+This is a strong demo script! Here's my feedback:
+
+✅ What Works Really Well
+
+Opening hook - "Most people treat databases like a black box" immediately establishes the problem
+Show, don't tell - You walk through live experiments, not slides
+Specific smoking guns - "500,000 rows lost, no error" is visceral
+Academic grounding - CMU 15-721 references add credibility without being dry
+Pacing - 3:30-4:30 is perfect for engagement
+Closing line - "Go break something. Learn why it broke." is memorable
+
+
+⚠️ Critical: Verify These Numbers
+Before recording, double-check against your actual benchmark results:
+Script SaysNeed to VerifyUC5: "500,000 rows lost"Is this the actual count?UC1: "18s cold, 3s hot, 6x faster"Actual cold/hot times?UC7: "6.66x smaller, 6x faster"Actual compression ratio and scan speed?UC6: "265ms DuckDB, 6,785ms Python, 25.6x"✅ Matches corrected dataUC2: "19,204 temp blocks at 64MB"✅ Matches corrected dataUC9: "1.57x faster"Actual predicate pushdown speedup?
+We just caught fabricated numbers in Experiments 2 and 6 of the article - make sure the video script uses ACTUAL benchmark results.
+
+🎬 Visual Flow Suggestions
+Strengthen These Moments:
+1. UC5 ACID reveal (your strongest moment):
+[Click Run]
+[Results appear - hold on screen 2-3 seconds SILENTLY]
+[Then speak]: "Writer A committed. Writer B committed..."
+Why: Let the visual shock land before you explain it.
+
+2. Add a "Why this matters" beat after UC5:
+[After showing ConcurrentAppendException]
+
+"This isn't just theory. Every data lake using Parquet has this problem.
+S3. HDFS. Azure Blob Storage. If you're not using Delta or Iceberg,
+you're one concurrent write away from silent data loss."
+
+[Pause 2 seconds]
+
+"Now you've seen it."
+Why: Bridges academic proof to real-world stakes.
+
+3. The montage needs a narrative thread:
+Current:
+[Quick-cut: UC6, UC2, UC9]
+Vectorized execution: 25.6x...
+External merge sort: 19,204 temp blocks...
+Predicate pushdown: 1.57x...
+Suggested:
+[Show UC6 running]
+"Vectorized execution — 25-point-6 times faster."
+
+[Show UC2 running]
+"Memory pressure — Postgres writes 19,204 temp blocks to disk."
+
+[Show UC9 running]
+"Query optimization — one WHERE clause, the optimizer filters
+98% of rows before the join even starts."
+
+[Pause, let results sit on screen]
+
+"Every one of these is a mechanism. Not magic. Mechanism."
+Why: The word "mechanism" is your thesis - reinforce it here.
+
+📊 Missing: Why Replit Matters
+Current ending:
+"I built this on Replit — and the 2GB memory constraint was a feature,
+not a bug. It forced Postgres to spill to disk."
+This is buried. Elevate it:
+[After showing the experiments work]
+
+"Here's the thing about Replit: the 2-gig memory limit?
+That's not a constraint. That's the point.
+
+It forces Postgres to spill to disk — that's UC2.
+It forces Spark to hit OOM on wide JSON — that's UC9.
+It makes the smoking guns visible.
+
+If I gave you unlimited cloud resources, you'd never see
+the buffer pool matter. You'd never see external sort kick in.
+
+Constraints reveal mechanisms. That's why this lab works."
+Why: Shows you CHOSE Replit for pedagogical reasons, not despite limitations.
+
+🎯 Technical Audience vs General Audience
+Current script leans 70% technical. Is that intentional?
+Phrases that might lose general viewers:
+
+"Optimistic Concurrency Control"
+"ConcurrentAppendException"
+"External merge sort"
+"SIMD batch processing"
+
+Two options:
+Option A: Keep it technical (my recommendation)
+
+Your audience is CS students, data engineers, database nerds
+They WANT the jargon
+Just make sure visuals carry non-experts
+
+Option B: Add one-sentence translations
+"Optimistic Concurrency Control — it's like optimistic locking,
+but for whole files instead of rows."
+
+"SIMD batch processing — instead of adding one number at a time,
+the CPU adds eight numbers in parallel."
+I recommend Option A - your target audience knows these terms, and the visuals explain enough.
+
+🔧 Recording Logistics
+Your notes say:
+
+Pre-run UC6/UC2/UC9 so results are already loaded
+
+Better approach: Record two takes
+Take 1: Live run (3:30-4:00)
+
+Actually click Run Experiment
+Let real load times show (builds tension)
+Risk: if something fails, you have to re-record
+
+Take 2: Pre-loaded results (2:45-3:15)
+
+Results already visible
+Faster pacing, no dead air
+Safer for production
+
+Then choose in editing which has better energy.
+
+📝 Script Polish
+Line-by-line tweaks:
+Opening (strengthen the hook):
+CURRENT:
+"Most people treat databases like a black box.
+You write a query. Results come back. You have no idea why."
+
+SUGGESTED:
+"Most people treat databases like a black box.
+You write SELECT star. Results come back.
+No idea why it took 2 seconds. Or 20. Or why it just lost half your data.
+
+I wanted to fix that."
+Why: "SELECT star" is more specific than "a query". "2 seconds or 20" makes the mystery concrete.
+
+UC7 Compression (clarify the paradox):
+CURRENT:
+"How does compressed data scan faster?"
+
+SUGGESTED:
+"Wait — how does compressed data scan FASTER?
+Shouldn't decompression slow it down?"
+
+[Pause - let the question sit]
+
+"Here's why it doesn't..."
+Why: Acknowledge the counterintuitive finding explicitly.
+
+Closing (punch it up):
+CURRENT:
+"Go break something. Learn why it broke."
+
+SUGGESTED:
+"The lab is right here. Every result is live. Every smoking gun is real.
+
+[Pause 2 seconds - hold on full dashboard]
+
+Go break something. Learn why it broke. Fix it. Repeat."
+Why: "Fix it. Repeat." adds the growth mindset loop.
+
+✅ Final Checklist Before Recording
+
+ Verify ALL numbers against actual benchmark results
+ Test run UC5 (ACID) - it's your hero moment
+ Decide: live runs or pre-loaded results?
+ Practice saying "6.66" and "25.6" clearly (decimal numbers are tricky)
+ Time yourself - aim for 3:30, max 4:30
+ Test: Can non-database people follow UC5? (If no, add 1 clarifying sentence)
+ Check Replit embed works in video frame
+ Plan B if an experiment fails during recording
+
+
+🎬 Bottom Line
+This is 90% ready to record.
+Must fix:
+
+✅ Verify all numbers (don't fabricate like the article draft)
+✅ Strengthen UC5 reveal (your best moment)
+✅ Elevate the "why Replit" story
+
+Consider:
+
+Add "mechanism not magic" callback in montage
+Strengthen closing with "Fix it. Repeat."
+Decide on live vs pre-loaded results
+
+Keep:
+
+Opening hook ✅
+Pacing structure ✅
+Closing line ✅
+Academic grounding ✅
+
+You've got a strong demo here. Fix the numbers, punch up UC5, and you're good to record. 🚀
