@@ -100,15 +100,4 @@ Pre-run results are included in `olap-benchmark/results/` so the dashboard is fu
 
 Course: [CMU 15-721 Advanced Database Systems](https://15721.courses.cs.cmu.edu) · Instructor: Andy Pavlo
 
----
 
-## Design Philosophy
-
-> Theory before proof — every experiment follows the same arc:
-> 1. Open question ("Can you lose 500K rows without an error?")
-> 2. Theory primer (what the lecture says will happen)
-> 3. Run the workload
-> 4. Find the smoking gun
-> 5. Understand the mechanism
-
-Databases aren't magic. They're mechanisms. This lab makes them visible.
